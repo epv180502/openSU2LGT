@@ -52,6 +52,7 @@ function evolve()
     N = inputs["N"]
     function get_initial_state()
 
+        # TODO: Here we have to change into the new type of sites: SU2_packed_sites
         sites_initial_state = siteinds("S=1/2", N, conserve_qns = conserve_qns)
 
         if rerun_mode # case of rerunning the script from saved data
@@ -257,6 +258,7 @@ function evolve()
         println("Finished getting the MPO for the taylor expansion ", now())
         flush(stdout)
 
+        # TODO: Look at how to measure observables and what needs to change for our case
         # Starting the lists of the observables we want to keep track of
         println("Now getting the lists for the tracked observables ", now())
         flush(stdout)
