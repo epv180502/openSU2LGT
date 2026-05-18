@@ -1,8 +1,149 @@
-# TODO: Here we define the hamiltonian so we need to change this to SU2 
-function get_aH_Hamiltonian(sites, x, l_0, ma, lambda)
+using ITensor
+using LinearAlgebra: kron
+
+# -------------------------------------------- SiteType Creation ---------------------------------------------
+# TODO: DOC STRING. CHECK THE PRIMES ARE CORRECT 
+function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
+    # TODO: May be possible to reduce it to two since r0 and 0g should be r0 - 0g
+    return 4
+end
+
+function ITensors.state(::StateName"rg", ::SiteType"SU2_packed", s::Index)
+    v = zeros(4)
+    v[1] = 1
+    return ITensor(v, s)
+end
+
+function ITensors.state(::StateName"r0", ::SiteType"SU2_packed", s::Index)
+    v = zeros(4)
+    v[2] = 1
+    return ITensor(v, s)
+end
+
+function ITensors.state(::StateName"0g", ::SiteType"SU2_packed", s::Index)
+    v = zeros(4)
+    v[3] = 1
+    return ITensor(v, s)
+end
+
+function ITensors.state(::StateName"00", ::SiteType"SU2_packed", s::Index)
+    v = zeros(4)
+    v[4] = 1
+    return ITensor(v, s)
+end
+                
+# Global identity 
+function ITensors.op(::OpName"Id", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Id", s1) ⊗ op("Id", s2), prime(s), s)
+end
+
+# Hopping operators
+function ITensors.op(::OpName"SpSz", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("S+", s1) ⊗ op("Z", s2), prime(s), s)
+end
+function ITensors.op(::OpName"SmS0", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("S-", s1) ⊗ op("Id", s2), prime(s), s)
+end
+function ITensors.op(::OpName"S0Sp", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Id", s1) ⊗ op("S+", s2), prime(s), s)
+end
+function ITensors.op(::OpName"SzSm", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Z", s1) ⊗ op("S-", s2), prime(s), s)
+end
+
+# Mass operators
+function ITensors.op(::OpName"SpS0", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("S+", s1) ⊗ op("Id", s2), prime(s), s)
+end
+function ITensors.op(::OpName"S0Sm", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Id", s1) ⊗ op("S-", s2), prime(s), s)
+end
+
+function ITensors.op(::OpName"N_r", ::SiteType"SU2_packed", s::Index)
+    return op("SpS0", s) * op("SmS0", s)
+end
+function ITensors.op(::OpName"N_g", ::SiteType"SU2_packed", s::Index)
+    return op("S0Sp", s) * op("S0Sm", s)
+end
+
+function ITensors.op(::OpName"N_tot", ::SiteType"SU2_packed", s::Index)
+    return op("N_r", s) + op("N_g", s)
+end
+
+# Electric operators
+function ITensors.op(::OpName"SzSz", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Z", s1) ⊗ op("Z", s2), prime(s), s)
+end
+function ITensors.op(::OpName"1-SzSz", ::SiteType"SU2_packed", s::Index)
+    return op("Id", s) - op("SzSz", s)
+end
+
+function ITensors.op(::OpName"SmSp", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("S-", s1) ⊗ op("S+", s2), prime(s), s)
+end
+function ITensors.op(::OpName"SpSm", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("S+", s1) ⊗ op("S-", s2), prime(s), s)
+end
+
+function ITensors.op(::OpName"SzS0", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Z", s1) ⊗ op("Id", s2), prime(s), s)
+end
+function ITensors.op(::OpName"S0Sz", ::SiteType"SU2_packed", s::Index)
+    s1 = siteind("S=1/2")
+    s2 = siteind("S=1/2")
+    return ITensor(op("Id", s1) ⊗ op("Z", s2), prime(s), s)
+end
+function ITensors.op(::OpName"DeltaZ", ::SiteType"SU2_packed", s::Index)
+    return op("SzS0", s) - op("S0Sz", s)
+end
+
+# Extra operators
+function ITensors.op(::OpName"N_pair", ::SiteType"SU2_packed", s::Index)
+    return op("N_r", s) * op("N_g", s)
+end
+function ITensors.op(::OpName"N_single", ::SiteType"SU2_packed", s::Index)
+    return op("N_tot", s) - 2*op("N_pair", s)
+end
+function ITensors.op(::OpName"N_zero", ::SiteType"SU2_packed", s::Index)
+    return op("Id", s) - op("N_single", s) - op("N_pair", s)
+end
+
+
+# -------------------------------------------- Hamiltonian Creation ---------------------------------------------
+# What is lambda => Gauge protection QUESTION: Do we need it?
+# QUESTION: Do we need background field? l_0 -> For now I remove them
+
+# NOTE: Hamiltonian Updated
+function get_aH_Hamiltonian(sites, g2, m, a)
 
     """
-    This gives aH Hamiltonian
+    This gives aH Hamiltonian acting on state vectors and is used to begin the system in an eigenstate
+
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = lattice spacing
     """
 
     N = length(sites)
@@ -14,23 +155,28 @@ function get_aH_Hamiltonian(sites, x, l_0, ma, lambda)
         for m in n+1:N
             
             # Long range ZZ interaction term
-            opsum += 0.25*(1/x)*(N-m+lambda),"Z",n,"Z",m
+            opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n,"DeltaZ",m
+
+            # Long range hopping interaction term
+            opsum += (a*g2/2)*(N-m),"SmSp",n,"SpSm",m
+            opsum += (a*g2/2)*(N-m),"SpSm",n,"SmSp",m
 
         end
 
         # Kinetic term
-        opsum += 0.5,"S+",n,"S-",n+1
-        opsum += 0.5,"S-",n,"S+",n+1
+        opsum += -(1/(2*a)),"SpSz",n,"SmS0",n+1
+        opsum += -(1/(2*a)),"S0Sp",n,"SzSm",n+1
 
-        opsum += (1/x)*(N/8 - 0.25*ceil((n-1)/2) + l_0*(N-n)/2),"Z",n
+        # Inverse Z term
+        opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n
         
-        opsum += (0.5*ma*(-1)^(n-1)),"Z",n
+        # Mass term
+        opsum += (m*(-1)^(n-1)),"N_tot",n
 
     end
 
-    opsum += (0.5*ma*(-1)^(N-1)),"Z",N
-
-    opsum += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x) + (lambda*N/(8*x))),"Id",1
+    # The for loop on top only goes to N-1 so we add the last term manually
+    opsum += (m*(-1)^(N-1)),"N_tot",N
 
     return MPO(opsum, sites)
 
@@ -145,40 +291,42 @@ function lowest_eval_mpo(mpo; tol = 1e-9)
 
 end
 
-function environment_correlator(type, n, m, aD, inputs)
+# NOTE: Renamed some variables to add a dependence
+function environment_correlator(type, n, m, D, inputs)
 
     if type == "constant"
-        return aD
+        return D
     elseif type == "delta"
         if n == m
-            return aD
+            return D
         else
             return 0.0
         end
     else # gaussian case
-        sigma_over_a = inputs["sigma_over_a"]
-        return aD*exp(-0.5*(1/sigma_over_a)^2*(n-m)^2)
+        sigma = inputs["sigma"]
+        return D*exp(-0.5*(1/sigma)^2*(n-m)^2)
     end
 
 end
 
+# NOTE: Updated to SU2 vacuum
 function get_dirac_vacuum_mps(sites; flip_sites = [])
 
     N = length(sites)
-    state = [isodd(n) ? "1" : "0" for n = 1:N]
+    state = [isodd(n) ? "rg" : "00" for n = 1:N]
     state = []
     for n in 1:N
         if isodd(n)
             if n in flip_sites
-                push!(state, "0")
+                push!(state, "00")
             else
-                push!(state, "1")
+                push!(state, "rg")
             end
         else
             if n in flip_sites
-                push!(state, "1")
+                push!(state, "rg")
             else
-                push!(state, "0") 
+                push!(state, "00") 
             end
         end
     end
@@ -188,6 +336,7 @@ function get_dirac_vacuum_mps(sites; flip_sites = [])
 
 end
 
+# NOTE: Updated site name from S=1/2 to SU2_packed
 function rho_vec_to_mps(rho_vec)
 
     N = length(rho_vec)
@@ -210,7 +359,7 @@ function rho_vec_to_mps(rho_vec)
             replacetags!(U, "Link,l=$(i-1)", "Link,l=$(2*i-2)") # change tag of left link to mps convention
         end
         replacetags!(U, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention
-        replacetags!(U, "S=1/2,Site,n=$(i)", "S=1/2,Site,n=$(2*i-1)") # change the label of the second physical index from i to 2*i-1
+        replacetags!(U, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i-1)") # change the label of the second physical index from i to 2*i-1
         mps[2*i-1] = U
 
         # Fix V indices
@@ -218,7 +367,7 @@ function rho_vec_to_mps(rho_vec)
             replacetags!(V, "Link,l=$(i)", "Link,l=$(2*i)") # same as the line above but for the right link
         end
         replacetags!(V, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention (here it is Link,u because of V = S*V above)
-        replacetags!(V, "S=1/2,Site,n=$(i)", "S=1/2,Site,n=$(2*i)") # change the label of the second physical index from i to 2*i
+        replacetags!(V, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i)") # change the label of the second physical index from i to 2*i
         # V = reverse_dir(V, inds(V; :tags => "Site")[1]) # reverse the physical leg direction from in to out - this is mandatory for constructing MPO with autoMPO
         mps[2*i] = V
 
@@ -228,13 +377,16 @@ function rho_vec_to_mps(rho_vec)
 
 end
 
-# TODO: Define the SU(2) hamiltonan here
-function get_double_aH_Hamiltonian(sites, x, l_0, ma, lambda, side)
+# NOTE: Hamiltonian Updated
+function get_double_aH_Hamiltonian(sites, g2, m, a, side)
 
     """
-    This gives aH Hamiltonian
+    This gives aH Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
+    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H
 
-    side specifies "left" or "right" to imply H tensor product I or vice versa
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = lattice spacing
 
     """
 
@@ -242,6 +394,7 @@ function get_double_aH_Hamiltonian(sites, x, l_0, ma, lambda, side)
 
     opsum = OpSum()
 
+    # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
     for n in 1:N-1
 
         if side == "left"
@@ -259,26 +412,31 @@ function get_double_aH_Hamiltonian(sites, x, l_0, ma, lambda, side)
             end
             
             # Long range ZZ interaction term
-            opsum += 0.25*(1/x)*(N-m+lambda),"Z",n_idx,"Z",m_idx
+            opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
+
+            # Long range hopping interaction term
+            opsum += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
+            opsum += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
 
         end
 
         # Kinetic term
-        opsum += 0.5,"S+",n_idx,"S-",n_idx+2
-        opsum += 0.5,"S-",n_idx,"S+",n_idx+2
+        opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
 
-        opsum += (1/x)*(N/8 - 0.25*ceil((n-1)/2) + l_0*(N-n)/2),"Z",n_idx
+        # Inverse Z term
+        opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
         
-        opsum += (0.5*ma*(-1)^(n-1)),"Z",n_idx
+        # Mass term
+        opsum += (m*(-1)^(n-1)),"N_tot",n_idx
 
     end
 
+    # The for loop on top only goes to N-1 so we add the last term manually
     if side == "left"
-        opsum += (0.5*ma*(-1)^(N-1)),"Z",2*N-1
-        opsum += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x) + (lambda*N/(8*x))),"Id",1
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N-1
     else
-        opsum += (0.5*ma*(-1)^(N-1)),"Z",2*N
-        opsum += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x) + (lambda*N/(8*x))),"Id",2
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N
     end
 
     return opsum
@@ -303,13 +461,14 @@ function trace_mps(mps)
 
 end
 
-function measure_z(mps, site)
+# NOTE: Updated operator to measure to be arbitrary operator you input
+function measure_op(mps, opname, site)
 
     sites = siteinds(mps)
     l = length(mps)
 
-    z = op("Z", sites[site])
-    mps = apply(z, mps)
+    opTens = op(opname, sites[site])
+    mps = apply(opTens, mps)
 
     i = 1
     left, right = 2*i-1, 2*i
@@ -324,25 +483,26 @@ function measure_z(mps, site)
 
 end
 
-function measure_z_config(mps; left = true)
+# NOTE: Updated operator to measure to be arbitrary operator you input
+function measure_op_config(mps, opname; left = true)
 
     n = length(mps)
-    z_config = []
+    op_config = []
     if left
         for site in 1:2:n
-            push!(z_config, measure_z(mps, site))
+            push!(op_config, measure_op(mps, opname, site))
         end
     else
         for site in 2:2:n
-            push!(z_config, measure_z(mps, site))
+            push!(op_config, measure_op(mps, opname, site))
         end
     end
 
-    return z_config
+    return op_config
 
 end
 
-# TODO: Define the aLm tensor product aLndagger operator for our SU(2) model
+# TODO: Liouvillian Update
 function get_aLm_aLndag(n, m, aT, sites)
 
     """
@@ -435,7 +595,7 @@ function get_aLm_aLndag(n, m, aT, sites)
     
 end
 
-# TODO: Define the aL_n_dagger tensor product aL_m operator for our SU(2) model
+# TODO: Liouvillian Update
 function get_aLndag_aLm(n, m, aT, sites, side)
 
     """
@@ -773,11 +933,12 @@ function get_odd_even_taylor_groups(opsum, sites)
 
 end
 
-function get_Lindblad_opsum_without_l0_terms(sites, x, ma, lambda, aT, aD, env_corr_type, inputs, dissipator_sites)
+# TODO: Liouvillian Update
+function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, aT, aD, env_corr_type, inputs, dissipator_sites)
 
     N = div(length(sites), 2)
-    res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, x, ma, lambda, "left")
-    res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, x, ma, lambda, "right")
+    res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "left")
+    res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "right")
     
     if aD != 0
         for n in dissipator_sites
@@ -785,7 +946,7 @@ function get_Lindblad_opsum_without_l0_terms(sites, x, ma, lambda, aT, aD, env_c
                 if env_corr_type == "delta" && n != m
                     continue
                 end
-                res += environment_correlator(env_corr_type, n, m, aD, inputs) * ( get_aLm_aLndag(2*n, 2*m-1, aT, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, aT, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, aT, sites, "right") )
+                res += environment_correlator(env_corr_type, n, m, D, inputs) * ( get_aLm_aLndag(2*n, 2*m-1, aT, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, aT, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, aT, sites, "right") )
             end
         end
     end
@@ -794,12 +955,16 @@ function get_Lindblad_opsum_without_l0_terms(sites, x, ma, lambda, aT, aD, env_c
 
 end
 
-function get_double_aH_Hamiltonian_without_l0_terms(sites, x, ma, lambda, side)
+# NOTE: Hamiltonian Updated. 
+function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
 
     """
-    This gives aH Hamiltonian
+    This gives aH Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
+    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H
 
-    side specifies "left" or "right" to imply H tensor product I or vice versa
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = lattice spacing
 
     """
 
@@ -807,6 +972,7 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, x, ma, lambda, side)
 
     opsum = OpSum()
 
+    # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
     for n in 1:N-1
 
         if side == "left"
@@ -824,90 +990,34 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, x, ma, lambda, side)
             end
             
             # Long range ZZ interaction term
-            opsum += 0.25*(1/x)*(N-m+lambda),"Z",n_idx,"Z",m_idx
+            opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
+
+            # Long range hopping interaction term
+            opsum += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
+            opsum += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
 
         end
 
         # Kinetic term
-        opsum += 0.5,"S+",n_idx,"S-",n_idx+2
-        opsum += 0.5,"S-",n_idx,"S+",n_idx+2
+        opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+
+        # Inverse Z term
+        opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
         
-        opsum += (0.5*ma*(-1)^(n-1)),"Z",n_idx
+        # Mass term
+        opsum += (m*(-1)^(n-1)),"N_tot",n_idx
 
     end
 
+    # The for loop on top only goes to N-1 so we add the last term manually
     if side == "left"
-        opsum += (0.5*ma*(-1)^(N-1)),"Z",2*N-1
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N-1
     else
-        opsum += (0.5*ma*(-1)^(N-1)),"Z",2*N
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N
     end
 
     return opsum
-
-end
-
-function get_double_aH_Hamiltonian_just_l0_terms(sites, x, l_0, lambda, side)
-
-    """
-    This gives aH Hamiltonian
-
-    side specifies "left" or "right" to imply H tensor product I or vice versa
-
-    """
-
-    N = div(length(sites), 2)
-
-    opsum = OpSum()
-
-    for n in 1:N-1
-
-        if side == "left"
-            n_idx = 2*n-1
-        else
-            n_idx = 2*n 
-        end
-        
-        opsum += (1/x)*(N/8 - 0.25*ceil((n-1)/2) + l_0*(N-n)/2),"Z",n_idx
-        
-    end
-
-    if side == "left"
-        opsum += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x) + (lambda*N/(8*x))),"Id",1
-    else
-        opsum += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x) + (lambda*N/(8*x))),"Id",2
-    end
-
-    return opsum
-
-end
-
-function get_Lindblad_opsum_just_l0_terms(sites, x, l_0, lambda)
-
-    res = -1im*get_double_aH_Hamiltonian_just_l0_terms(sites, x, l_0, lambda, "left")
-    res += 1im*get_double_aH_Hamiltonian_just_l0_terms(sites, x, l_0, lambda, "right")
-    
-    return res
-
-end
-
-function get_applied_field(which_applied_field, inputs, t_over_a)
-
-    l_0_1 = inputs["l_0_1"]
-    
-    if which_applied_field == "constant"
-        return l_0_1
-    else
-        l_0_2 = inputs["l_0_2"]
-        a_omega = inputs["a_omega"]
-        if which_applied_field == "sauter"
-            return l_0_1 + l_0_2/cosh(a_omega*t_over_a)^2
-        elseif which_applied_field == "gaussian"
-            return l_0_1 + l_0_2*exp(-(a_omega*t_over_a)^2)
-        else # oscillatory case
-            return l_0_1 + l_0_2*cos(a_omega*t_over_a)
-        end
-    end
-
 end
 
 function measure_mpo(mps, mpo; alg = "none")
@@ -934,8 +1044,8 @@ function measure_mpo(mps, mpo; alg = "none")
 
 end
 
-# TODO: Define SU(2) hamiltonian here
-function get_double_aH_Hamiltonian_individual_terms(N, x, l_0, side)
+# NOTE: Hamiltonian Updated. 
+function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
 
     """
     This gives aH Hamiltonian
@@ -963,29 +1073,35 @@ function get_double_aH_Hamiltonian_individual_terms(N, x, l_0, side)
             else
                 m_idx = 2*m
             end
-            
+
             # Long range ZZ interaction term
-            opsum_electric_field_term += 0.25*(1/x)*(N-m),"Z",n_idx,"Z",m_idx
+            opsum_electric_field_term += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
+
+            # Long range hopping interaction term
+            opsum_electric_field_term += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
+            opsum_electric_field_term += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
 
         end
 
         # Kinetic term
-        opsum_kinetic_term += 0.5,"S+",n_idx,"S-",n_idx+2
-        opsum_kinetic_term += 0.5,"S-",n_idx,"S+",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
 
-        opsum_electric_field_term += (1/x)*(N/8 - 0.25*ceil((n-1)/2) + l_0*(N-n)/2),"Z",n_idx
+        # Inverse Z term
+        opsum_electric_field_term += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
         
-        opsum_mass_term += (0.5*(-1)^(n-1)),"Z",n_idx
+        # Mass term
+        opsum_mass_term += (m*(-1)^(n-1)),"N_tot",n_idx
 
     end
 
+    # The for loop on top only goes to N-1 so we add the last term manually
     if side == "left"
-        opsum_mass_term += (0.5*(-1)^(N-1)),"Z",2*N-1
-        opsum_electric_field_term += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x)),"Id",1
+        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N-1
     else
-        opsum_mass_term += (0.5*(-1)^(N-1)),"Z",2*N
-        opsum_electric_field_term += ((l_0^2)*(N-1)/(2*x) + (l_0*N)/(4*x) + (N^2)/(16*x)),"Id",2
+        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N
     end
+
 
     return opsum_kinetic_term, opsum_electric_field_term, opsum_mass_term
 
