@@ -673,33 +673,57 @@ function get_aLndag_aLm(n, m, a, T, sites, side)
 
     # Term (b)
     if (m_phys != 1)
-        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m-2,"SmS0",m
-        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m-2,"SzSm",m
-        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m-2,"SpS0",m
-        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m-2,"SzSp",m
+        for (coef, op1, idx1, op2, idx2) in Sm_minus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),"N_tot",n,op1,idx1,op2,idx2
+        end
     end
 
     if (m_phys != N)
-        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m,"SmS0",m+2
-        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m,"SzSm",m+2
-        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m,"SpS0",m+2
-        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m,"SzSp",m+2
+        for (coef, op1, idx1, op2, idx2) in Sm_plus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),"N_tot",n,op1,idx1,op2,idx2
+        end
     end
+
+    # if (m_phys != 1)
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m-2,"SmS0",m
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m-2,"SzSm",m
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m-2,"SpS0",m
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m-2,"SzSp",m
+    # end
+
+    # if (m_phys != N)
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m,"SmS0",m+2
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m,"SzSm",m+2
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m,"SpS0",m+2
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m,"SzSp",m+2
+    # end
 
     # Term (c)
     if (n_phys != 1)
-        opsum -= (-(-1)^(phys_sign)*prefactor),"SpSz",n-2,"SmS0",n,"N_tot",m
-        opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sp",n-2,"SzSm",n,"N_tot",m
-        opsum -= ((-1)^(phys_sign)*prefactor),"SmSz",n-2,"SpS0",n,"N_tot",m
-        opsum -= ((-1)^(phys_sign)*prefactor),"S0Sm",n-2,"SzSp",n,"N_tot",m
+        for (coef, op1, idx1, op2, idx2) in Sn_minus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),op1,idx1,op2,idx2,"N_tot",m
+        end
     end
 
     if (n_phys != N)
-        opsum -= ((-1)^(phys_sign)*prefactor),"SpSz",n,"SmS0",n+2,"N_tot",m
-        opsum -= ((-1)^(phys_sign)*prefactor),"S0Sp",n,"SzSm",n+2,"N_tot",m
-        opsum -= (-(-1)^(phys_sign)*prefactor),"SmSz",n,"SpS0",n+2,"N_tot",m
-        opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sm",n,"SzSp",n+2,"N_tot",m
+        for (coef, op1, idx1, op2, idx2) in Sn_plus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),op1,idx1,op2,idx2,"N_tot",m
+        end
     end
+
+    # if (n_phys != 1)
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"SpSz",n-2,"SmS0",n,"N_tot",m
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sp",n-2,"SzSm",n,"N_tot",m
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"SmSz",n-2,"SpS0",n,"N_tot",m
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"S0Sm",n-2,"SzSp",n,"N_tot",m
+    # end
+
+    # if (n_phys != N)
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"SpSz",n,"SmS0",n+2,"N_tot",m
+    #     opsum -= ((-1)^(phys_sign)*prefactor),"S0Sp",n,"SzSm",n+2,"N_tot",m
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"SmSz",n,"SpS0",n+2,"N_tot",m
+    #     opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sm",n,"SzSp",n+2,"N_tot",m
+    # end
 
     # Term (d)
     if (n_phys != 1) && (m_phys != 1)
@@ -1156,3 +1180,4 @@ end
 # 1. Why are the bond dimensions of the taylor MPO asymmetrical? And big for the open case?
 # 2. Conserve_qns?
 # 3. Why did you not have x-dependence in the LnLm stuff?
+# 4. How did you keep track of the electric field?
