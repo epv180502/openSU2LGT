@@ -24,22 +24,22 @@ function parseCommandline()
         arg_type = Int
         required = true
 
-        "--x"
-        help = "parameter x of the the Hamiltonian"
+        "--g2"
+        help = "parameter g squared of the the Hamiltonian"
         arg_type = Float64
         required = true
 
-        "--ma"
-        help = "parameter ma of the the Hamiltonian"
+        "--m"
+        help = "parameter m of the the Hamiltonian"
         arg_type = Float64
         required = true
 
-        "--aT"
+        "--T"
         help = "Temperature"
         arg_type = Float64
         required = true
 
-        "--aD"
+        "--D"
         help = "Dissipator"
         arg_type = Float64
         required = true
@@ -58,6 +58,11 @@ function parseCommandline()
         help = "string length"
         arg_type = Int
         required = true
+
+        "--a"
+        help = "parameter a of the the Hamiltonian"
+        arg_type = Float64
+        default = 1
 
         "--lambda"
         help = "penalty strength"
@@ -103,19 +108,6 @@ function parseCommandline()
         help = "path to folder where data will be stored"
         arg_type = String
         default = "./"
-
-        "--k"
-        help = "graph parameter, for regular graphs a k-regular graph is selected"
-        arg_type = Float64
-        default = -1
-        "--strength"
-        help = "Strength of noise"
-        arg_type = Float64
-        default = 0.0
-        "--run"
-        help = "Index of the run in case we collect statistics"
-        arg_type = Int
-        default = 0
     end
     return parse_args(s)
 end
@@ -126,27 +118,28 @@ end
 Function performing the actual time evolution
 """
 function evolve()
+    # ------------------------------------- Setup parameters of the simulation -------------------------------------
     # Parse the arguments from the command line
     parsedArgs = parseCommandline()
-    N = parsedArgs["N"]
-    x = parsedArgs["x"]
-    ma = parsedArgs["ma"]
-    lambda = parsedArgs["lambda"]
-    aT = parsedArgs["aT"]
-    aD = parsedArgs["aD"]
-    env_corr_type = parsedArgs["env_corr_type"]
-    l_0 = parsedArgs["l_0"]
-    number_of_time_steps = parsedArgs["nsteps"]
-    len = parsedArgs["len"]
-    tau = parsedArgs["tau"]
-    #dissipator_sites = parsedArgs["ds"]
-    dissipator_sites = collect(1:N)
-    taylor_expansion_order = parsedArgs["teo"]
-    taylor_expansion_cutoff_1 = parsedArgs["tec_1"]
-    taylor_expansion_cutoff_2 = parsedArgs["tec_2"]
-    cutoff = parsedArgs["cutoff"]
-    maxdim = parsedArgs["maxdim"]
-    folder = parsedArgs["folder"]
+    N = parsedArgs["N"]                             # Number of staggered sites
+    g2 = parsedArgs["g2"]                           # Gauge coupling
+    m = parsedArgs["m"]                             # Mass
+    a = parsedArgs["a"]                             # Lattice spacing
+    lambda = parsedArgs["lambda"]                   # Gauge protection term
+    T = parsedArgs["T"]                             # Temperature
+    D = parsedArgs["D"]                             # Self-correlation
+    env_corr_type = parsedArgs["env_corr_type"]     # Type of correlator
+    l_0 = parsedArgs["l_0"]                         # Background electric field
+    number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps
+    len = parsedArgs["len"]                         # Length of the string 
+    tau = parsedArgs["tau"]                         # Timestep
+    dissipator_sites = collect(1:N)                 # Site to be acted upon by the env. Defaulted to all
+    taylor_expansion_order = parsedArgs["teo"]      # Order of Taylor expansion
+    taylor_expansion_cutoff_1 = parsedArgs["tec_1"] # Cutoff 1 for Taylor expansion
+    taylor_expansion_cutoff_2 = parsedArgs["tec_2"] # Cutoff 2 for Taylor expansion
+    cutoff = parsedArgs["cutoff"]                   # Cutoff of the SVD. Maximum normalization to be truncated in SVD
+    maxdim = parsedArgs["maxdim"]                   # Maximum bond dimension
+    folder = parsedArgs["folder"]                   # Folder to store results        
 
     # Print the parameters we parsed
     println("Parsed args:")
@@ -155,20 +148,21 @@ function evolve()
     end
 
     # Construct filename 
-    path_to_results = string(folder, "os_N_", N, "_x", x, "_ma", ma, ".h5")
+    path_to_results = string(folder, "os_N_", N, "_g2", g2, "_m", m, ".h5")
 
+    # ------------------------------------- Create the initial state -------------------------------------
     # Sites which need to be flipped
     ind_start = Int(round(N / 2 - len / 2)) + 1
-    flip_sites = collect(ind_start:ind_start+len-1)
+    flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
     println("flip sites ", flip_sites)
 
     # Prepare the initial state
     println("Now getting the initial state")
 
-    "Local helper function to get the Dirac vacuum with a string on top"
+    "Local helper function to get the Dirac vacuum with a string of lenght 'len' on top"
     function get_initial_state()
         # Prepare the dirac vacuum with a string on top
-        sites_initial_state = siteinds("S=1/2", N, conserve_qns=true)
+        sites_initial_state = siteinds("SU2_packed", N)   # TODO: Add conserve_qns
         psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites) # This is a normal non-purified MPS
         rho = outer(psi', psi) # Get the density matrix
         rho_vec = convert(MPS, rho) # Convert the density matrix to a purified MPS
@@ -181,41 +175,48 @@ function evolve()
     sites = siteinds(mps)
     println("Finished getting the initial state")
 
+    # ------------------------------------- Create the hamiltonian -------------------------------------
     # Get the taylor, odd and even opsum groups without the l0 terms
     println("Now getting the odd, even and taylor gates without the l0 terms")
 
     side = "left"
-    H = get_double_aH_Hamiltonian(sites, x, l_0, ma, lambda, side)
+    H = get_double_aH_Hamiltonian(sites, g2, m, a, side)
     H = MPO(H, sites)
-    H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, x, l_0, side)
+    H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
-    for i in 2:2:length(sites) # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and combining this with the swapprime done on the operators later the transpose is taken on the operators acting on the even sites which correspond to operators acting on the right of the density matrix
+
+    # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and 
+    # combining this with the swapprime done on the operators later the transpose is taken on the operators acting 
+    # on the even sites which correspond to operators acting on the right of the density matrix
+    for i in 2:2:length(sites) 
         sites[i] = dag(sites[i])
     end
-    #opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, x, ma, lambda, aT, aD, env_corr_type, inputs, dissipator_sites)
-    opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, x, ma, lambda, aT, aD, env_corr_type, parsedArgs, dissipator_sites)
+
+    opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, parsedArgs, dissipator_sites)
     nn_odd_without_l0_terms, nn_even_without_l0_terms, taylor = get_odd_even_taylor_groups(opsum_without_l0_terms, sites)
     println("Finished getting the odd, even and taylor gates without the l0 terms")
 
+    # NOTE: Currently we are not using a background field but if we do we need to add it in the odd/even terms 
 
-    # Get the odd and even opsum groups with just the l0 terms
-    println("Now getting the odd, even and taylor gates with just the l0 terms")
+    # # Get the odd and even opsum groups with just the l0 terms
+    # println("Now getting the odd, even and taylor gates with just the l0 terms")
 
-    opsum_just_l0_terms = get_Lindblad_opsum_just_l0_terms(sites, x, l_0, lambda)
-    nn_odd_just_l0_terms, nn_even_just_l0_terms, _ = get_odd_even_taylor_groups(opsum_just_l0_terms, sites)
-    println("Finished getting the odd, even and taylor gates with just the l0 terms")
+    # opsum_just_l0_terms = get_Lindblad_opsum_just_l0_terms(sites, x, l_0, lambda)
+    # nn_odd_just_l0_terms, nn_even_just_l0_terms, _ = get_odd_even_taylor_groups(opsum_just_l0_terms, sites)
+    # println("Finished getting the odd, even and taylor gates with just the l0 terms")
 
     # Gather the two odd and even gates
     println("Now putting all the even and odd together")
 
-    odd = get_odd(sites, tau / 2, nn_odd_without_l0_terms .+ nn_odd_just_l0_terms)
-    even = get_even(sites, tau, nn_even_without_l0_terms .+ nn_even_just_l0_terms)
+    odd = get_odd(sites, tau / 2, nn_odd_without_l0_terms)
+    even = get_even(sites, tau, nn_even_without_l0_terms)
     println("Finished putting all the even and odd together")
 
     # Get the MPO for the Taylor expansion
     println("Now getting the MPO for the taylor expansion")
     taylor_mpo_tmp = 0.5 * tau * MPO(taylor, sites)
     truncate!(taylor_mpo_tmp; cutoff=taylor_expansion_cutoff_1)
+
     for i in 2:2:length(taylor_mpo_tmp) # Transpose the MPO on the even sites which would correspond to the bottom legs of the MPO
         taylor_mpo_tmp[i] = swapprime(taylor_mpo_tmp[i], 0, 1; :tags => "Site")
     end
@@ -225,11 +226,17 @@ function evolve()
 
     println("Finished getting the MPO for the taylor expansion")
 
-
+    # ------------------------------------- Get the observables to be measured -------------------------------------
     # Starting the lists of the observables we want to keep track of
     println("Now getting the lists for the tracked observables")
-    z_configs = zeros(ComplexF64, number_of_time_steps + 1, N)
-    z_configs[1, :] = measure_z_config(mps)
+    single_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
+    single_configs[1, :] = measure_op_config(mps, "N_single")
+    pair_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
+    pair_configs[1, :] = measure_op_config(mps, "N_pair")
+    zero_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
+    zero_configs[1, :] = measure_op_config(mps, "N_zero")
+    total_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
+    total_configs[1, :] = measure_op_config(mps, "N_tot")
     link_dims = zeros(Int64, number_of_time_steps + 1, 2 * N - 1)
     link_dims[1, :] = linkdims(mps)
     energy = zeros(ComplexF64, number_of_time_steps + 1)
@@ -246,6 +253,7 @@ function evolve()
     # Open the HDF5 file for the results
     results_file = h5open(path_to_results, "w")
 
+    # ------------------------------------- Run Simulation -------------------------------------
     for step in 1:number_of_time_steps
         # One time step with ATDDMRG
         apply_odd!(odd, mps, cutoff, maxdim)
@@ -258,7 +266,10 @@ function evolve()
         mps /= trace_mps(mps)
 
         # Compute the tracked observables
-        z_configs[step+1, :] = measure_z_config(mps)
+        single_configs[step+1, :] = measure_op_config(mps, "N_single")
+        pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
+        zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
+        total_configs[step+1, :] = measure_op_config(mps, "N_tot")
         linkdims_of_step = linkdims(mps)
         link_dims[step+1, :] = linkdims_of_step
         energy[step+1] = measure_mpo(mps, H)
@@ -270,9 +281,13 @@ function evolve()
         println("Step = $(step), Links = $(linkdims(mps))")
     end
 
+    # ------------------------------------- Save Simulation -------------------------------------
     # Write tracked observables to results h5 file
     println("Now writing the observables to results HDF5 file")
-    write(results_file, "z_configs", z_configs)
+    write(results_file, "single_configs", single_configs)
+    write(results_file, "pair_configs", pair_configs)
+    write(results_file, "zero_configs", zero_configs)
+    write(results_file, "total_configs", total_configs)
     write(results_file, "link_dims", link_dims)
     write(results_file, "energy", energy)
     write(results_file, "kin_energy", kin_energy)

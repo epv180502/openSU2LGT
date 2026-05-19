@@ -1,135 +1,170 @@
-using ITensor
-using LinearAlgebra: kron
+using ITensors
+using LinearAlgebra
+using ITensors: ⊗
 
+# TODO: Document when done
 # -------------------------------------------- SiteType Creation ---------------------------------------------
-# TODO: DOC STRING. CHECK THE PRIMES ARE CORRECT 
+# TODO: May be possible to reduce it to three since r0 and 0g should be r0 - 0g
+# TODO: Should be possible to use conserve_qns to enforce the conservation of sigma_Z and delta_sigma_Z
+
+const Id = Float64[1 0;
+                   0 1]
+
+const Sz = Float64[1 0;
+                   0 -1]
+
+const Sp = Float64[0 1;
+                   0 0]
+
+const Sm = Float64[0 0;
+                   1 0]
+
+const N = Float64[1 0;
+                  0 0]
+
+# =========================
+# SITE DEFINITION
+# =========================
 function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
-    # TODO: May be possible to reduce it to two since r0 and 0g should be r0 - 0g
     return 4
 end
 
 function ITensors.state(::StateName"rg", ::SiteType"SU2_packed", s::Index)
-    v = zeros(4)
-    v[1] = 1
+    v = zeros(4); v[1] = 1
     return ITensor(v, s)
 end
 
 function ITensors.state(::StateName"r0", ::SiteType"SU2_packed", s::Index)
-    v = zeros(4)
-    v[2] = 1
+    v = zeros(4); v[2] = 1
     return ITensor(v, s)
 end
 
 function ITensors.state(::StateName"0g", ::SiteType"SU2_packed", s::Index)
-    v = zeros(4)
-    v[3] = 1
+    v = zeros(4); v[3] = 1
     return ITensor(v, s)
 end
 
 function ITensors.state(::StateName"00", ::SiteType"SU2_packed", s::Index)
-    v = zeros(4)
-    v[4] = 1
+    v = zeros(4); v[4] = 1
     return ITensor(v, s)
 end
-                
-# Global identity 
-function ITensors.op(::OpName"Id", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Id", s1) ⊗ op("Id", s2), prime(s), s)
+
+# =========================
+# HELPER
+# =========================
+
+make_op(mat, s) = ITensor(mat, prime(s), s)
+
+# =========================
+# IDENTITY
+# =========================
+
+function ITensors.op(::OpName"IdId", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Id, Id),s)
 end
 
-# Hopping operators
+# =========================
+# HOPPING OPERATORS
+# =========================
+
 function ITensors.op(::OpName"SpSz", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("S+", s1) ⊗ op("Z", s2), prime(s), s)
-end
-function ITensors.op(::OpName"SmS0", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("S-", s1) ⊗ op("Id", s2), prime(s), s)
-end
-function ITensors.op(::OpName"S0Sp", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Id", s1) ⊗ op("S+", s2), prime(s), s)
-end
-function ITensors.op(::OpName"SzSm", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Z", s1) ⊗ op("S-", s2), prime(s), s)
+    return make_op(kron(Sp, Sz),s)
 end
 
-# Mass operators
-function ITensors.op(::OpName"SpS0", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("S+", s1) ⊗ op("Id", s2), prime(s), s)
+function ITensors.op(::OpName"SmSz", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Sm, Sz),s)
 end
+
+function ITensors.op(::OpName"SmS0", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Sm, Id),s)
+end
+
+function ITensors.op(::OpName"S0Sp", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Id, Sp),s)
+end
+
+function ITensors.op(::OpName"SzSm", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Sz, Sm),s)
+end
+
+function ITensors.op(::OpName"SzSp", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Sz, Sp),s)
+end
+
+
+# =========================
+# MASS OPERATORS
+# =========================
+
+function ITensors.op(::OpName"SpS0", ::SiteType"SU2_packed", s::Index)
+    return make_op(kron(Sp, Id),s)
+end
+
 function ITensors.op(::OpName"S0Sm", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Id", s1) ⊗ op("S-", s2), prime(s), s)
+    return make_op(kron(Id, Sm),s)
 end
 
 function ITensors.op(::OpName"N_r", ::SiteType"SU2_packed", s::Index)
-    return op("SpS0", s) * op("SmS0", s)
+    return make_op(kron(N, Id),s)
 end
+
 function ITensors.op(::OpName"N_g", ::SiteType"SU2_packed", s::Index)
-    return op("S0Sp", s) * op("S0Sm", s)
+    return make_op(kron(Id, N),s) 
 end
 
 function ITensors.op(::OpName"N_tot", ::SiteType"SU2_packed", s::Index)
     return op("N_r", s) + op("N_g", s)
 end
 
-# Electric operators
+
+# =========================
+# ELECTRIC OPERATORS
+# =========================
+
 function ITensors.op(::OpName"SzSz", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Z", s1) ⊗ op("Z", s2), prime(s), s)
+    return make_op(kron(Sz, Sz),s)
 end
+
 function ITensors.op(::OpName"1-SzSz", ::SiteType"SU2_packed", s::Index)
-    return op("Id", s) - op("SzSz", s)
+    return op("IdId", s) - op("SzSz", s)
 end
 
 function ITensors.op(::OpName"SmSp", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("S-", s1) ⊗ op("S+", s2), prime(s), s)
+    return make_op(kron(Sm, Sp),s)
 end
+
 function ITensors.op(::OpName"SpSm", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("S+", s1) ⊗ op("S-", s2), prime(s), s)
+    return make_op(kron(Sp, Sm),s)
 end
 
 function ITensors.op(::OpName"SzS0", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Z", s1) ⊗ op("Id", s2), prime(s), s)
+    return make_op(kron(Sz, Id),s)
 end
+
 function ITensors.op(::OpName"S0Sz", ::SiteType"SU2_packed", s::Index)
-    s1 = siteind("S=1/2")
-    s2 = siteind("S=1/2")
-    return ITensor(op("Id", s1) ⊗ op("Z", s2), prime(s), s)
+    return make_op(kron(Id, Sz),s)
 end
+
 function ITensors.op(::OpName"DeltaZ", ::SiteType"SU2_packed", s::Index)
     return op("SzS0", s) - op("S0Sz", s)
 end
 
-# Extra operators
+
+# =========================
+# EXTRA OPERATORS
+# =========================
+
 function ITensors.op(::OpName"N_pair", ::SiteType"SU2_packed", s::Index)
-    return op("N_r", s) * op("N_g", s)
-end
-function ITensors.op(::OpName"N_single", ::SiteType"SU2_packed", s::Index)
-    return op("N_tot", s) - 2*op("N_pair", s)
-end
-function ITensors.op(::OpName"N_zero", ::SiteType"SU2_packed", s::Index)
-    return op("Id", s) - op("N_single", s) - op("N_pair", s)
+    return make_op(diagm([1, 0, 0, 0]), s)
 end
 
+function ITensors.op(::OpName"N_single", ::SiteType"SU2_packed", s::Index)
+    return make_op(diagm([0, 1, 1, 0]), s)
+end
+
+function ITensors.op(::OpName"N_zero", ::SiteType"SU2_packed", s::Index)
+    return make_op(diagm([0, 0, 0, 1]), s)
+end
 
 # -------------------------------------------- Hamiltonian Creation ---------------------------------------------
 # What is lambda => Gauge protection QUESTION: Do we need it?
@@ -150,9 +185,9 @@ function get_aH_Hamiltonian(sites, g2, m, a)
 
     opsum = OpSum()
 
-    for n in 1:N-1
+    for n in 1:(N-1)
         
-        for m in n+1:N
+        for m in (n+1):(N-1)
             
             # Long range ZZ interaction term
             opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n,"DeltaZ",m
@@ -166,6 +201,8 @@ function get_aH_Hamiltonian(sites, g2, m, a)
         # Kinetic term
         opsum += -(1/(2*a)),"SpSz",n,"SmS0",n+1
         opsum += -(1/(2*a)),"S0Sp",n,"SzSm",n+1
+        opsum += -(1/(2*a)),"SmSz",n,"SpS0",n+1
+        opsum += -(1/(2*a)),"S0Sm",n,"SzSp",n+1
 
         # Inverse Z term
         opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n
@@ -311,12 +348,16 @@ end
 
 # NOTE: Updated to SU2 vacuum
 function get_dirac_vacuum_mps(sites; flip_sites = [])
+    """Function to create the dirac vacuum of an SU2 LGT and, if flip_sites is defined, put a string on top of that state""" 
 
     N = length(sites)
-    state = [isodd(n) ? "rg" : "00" for n = 1:N]
+    # state = [isodd(n) ? "rg" : "00" for n = 1:N]    # One linear creates the dirac vacuum
     state = []
     for n in 1:N
-        if isodd(n)
+
+        # I put not (!) because I want my sites to begin in even and since julia vector numbering begins in 1
+        # I added a -1 in the hamiltonian when calculating the staggered terms and so the vacuum is [00, rg, ...]
+        if !isodd(n)
             if n in flip_sites
                 push!(state, "00")
             else
@@ -395,7 +436,7 @@ function get_double_aH_Hamiltonian(sites, g2, m, a, side)
     opsum = OpSum()
 
     # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
-    for n in 1:N-1
+    for n in 1:(N-1)
 
         if side == "left"
             n_idx = 2*n-1
@@ -403,7 +444,7 @@ function get_double_aH_Hamiltonian(sites, g2, m, a, side)
             n_idx = 2*n 
         end
         
-        for m in n+1:N
+        for m in (n+1):(N-1)
 
             if side == "left"
                 m_idx = 2*m-1
@@ -423,6 +464,8 @@ function get_double_aH_Hamiltonian(sites, g2, m, a, side)
         # Kinetic term
         opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
         opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+        opsum += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
 
         # Inverse Z term
         opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
@@ -708,8 +751,8 @@ function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
     end
 
     tmp1 = sum(l)
-    tmp2 = MPO(sites, "Id")
-    
+    tmp2 = MPO(sites, "IdId")
+
     for i in 2:2:length(tmp2)
         tmp2[i] = swapprime(tmp2[i], 0, 1; :tags => "Site")
     end
@@ -934,22 +977,21 @@ function get_odd_even_taylor_groups(opsum, sites)
 end
 
 # TODO: Liouvillian Update
-function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, aT, aD, env_corr_type, inputs, dissipator_sites)
+function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, inputs, dissipator_sites)
 
-    N = div(length(sites), 2)
     res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "left")
     res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "right")
     
-    if aD != 0
-        for n in dissipator_sites
-            for m in dissipator_sites
-                if env_corr_type == "delta" && n != m
-                    continue
-                end
-                res += environment_correlator(env_corr_type, n, m, D, inputs) * ( get_aLm_aLndag(2*n, 2*m-1, aT, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, aT, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, aT, sites, "right") )
-            end
-        end
-    end
+    # if D != 0
+    #     for n in dissipator_sites
+    #         for m in dissipator_sites
+    #             if env_corr_type == "delta" && n != m
+    #                 continue
+    #             end
+    #             res += environment_correlator(env_corr_type, n, m, D, inputs) * ( get_aLm_aLndag(2*n, 2*m-1, T, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, T, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, T, sites, "right") )
+    #         end
+    #     end
+    # end
 
     return res
 
@@ -973,7 +1015,7 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
     opsum = OpSum()
 
     # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
-    for n in 1:N-1
+    for n in 1:(N-1)
 
         if side == "left"
             n_idx = 2*n-1
@@ -981,7 +1023,7 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
             n_idx = 2*n 
         end
         
-        for m in n+1:N
+        for m in (n+1):(N)
 
             if side == "left"
                 m_idx = 2*m-1
@@ -1001,6 +1043,8 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
         # Kinetic term
         opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
         opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+        opsum += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
 
         # Inverse Z term
         opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
@@ -1048,7 +1092,7 @@ end
 function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
 
     """
-    This gives aH Hamiltonian
+    This gives aH Hamiltonian dividing between kinetic, electric and mass contributions
 
     side specifies "left" or "right" to imply H tensor product I or vice versa
 
@@ -1058,7 +1102,7 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     opsum_mass_term = OpSum()
     opsum_electric_field_term = OpSum()
 
-    for n in 1:N-1
+    for n in 1:(N-1)
 
         if side == "left"
             n_idx = 2*n-1
@@ -1066,7 +1110,7 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
             n_idx = 2*n 
         end
         
-        for m in n+1:N
+        for m in (n+1):(N-1)
 
             if side == "left"
                 m_idx = 2*m-1
@@ -1086,6 +1130,8 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
         # Kinetic term
         opsum_kinetic_term += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
         opsum_kinetic_term += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
 
         # Inverse Z term
         opsum_electric_field_term += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
@@ -1106,3 +1152,7 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     return opsum_kinetic_term, opsum_electric_field_term, opsum_mass_term
 
 end
+
+# QUESTIONS:
+# 1. Why are the bond dimensions of the taylor MPO asymmetrical?
+# 2. Conserve_qns?
