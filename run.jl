@@ -192,7 +192,7 @@ function evolve()
         sites[i] = dag(sites[i])
     end
 
-    opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, parsedArgs, dissipator_sites)
+    opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
     nn_odd_without_l0_terms, nn_even_without_l0_terms, taylor = get_odd_even_taylor_groups(opsum_without_l0_terms, sites)
     println("Finished getting the odd, even and taylor gates without the l0 terms")
 

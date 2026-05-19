@@ -328,9 +328,8 @@ function lowest_eval_mpo(mpo; tol = 1e-9)
 
 end
 
-# NOTE: Renamed some variables to add a dependence
-function environment_correlator(type, n, m, D, inputs)
-
+# NOTE: Renamed some variables to add a dependence and erased gaussian environment
+function environment_correlator(type, n, m, D)
     if type == "constant"
         return D
     elseif type == "delta"
@@ -339,11 +338,7 @@ function environment_correlator(type, n, m, D, inputs)
         else
             return 0.0
         end
-    else # gaussian case
-        sigma = inputs["sigma"]
-        return D*exp(-0.5*(1/sigma)^2*(n-m)^2)
     end
-
 end
 
 # NOTE: Updated to SU2 vacuum
@@ -545,107 +540,111 @@ function measure_op_config(mps, opname; left = true)
 
 end
 
-# TODO: Liouvillian Update
-function get_aLm_aLndag(n, m, aT, sites)
+# NOTE: Liouvillian Update
+function get_aLm_aLndag(n, m, a, T, sites)
 
     """
     Gives the operator aLm tensor product aLndagger so aLm acts on the left side system and aLndagger on the right
     """
 
     N = div(length(sites), 2)
-    
+    J = -1/(2*a)
+    prefactor = J/(4*T)
+
     n_phys, m_phys = div(n, 2), div(m + 1, 2)
+
+    phys_sign = n_phys + m_phys
+
+    Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
+               (-1, "SpSz", n-2, "SmS0", n), (-1, "S0Sp", n-2, "SzSm", n)]
+
+    Sn_plus = [(-1, "SmSz", n, "SpS0", n+2), (-1, "S0Sm", n, "SzSp", n+2), 
+                (1, "SpSz", n, "SmS0", n+2), (1, "S0Sp", n, "SzSm", n+2)]
+
+    Sm_minus = [(1, "SpSz", m-2, "SmS0", m), (1, "S0Sp", m-2, "SzSm", m),
+               (-1, "SmSz", m-2, "SpS0", m), (-1, "S0Sm", m-2, "SzSp", m)]
+    
+    Sm_plus = [(-1, "SpSz", m, "SmS0", m+2), (-1, "S0Sp", m, "SzSm", m+2), 
+                (1, "SmSz", m, "SpS0", m+2), (1, "S0Sm", m, "SzSp", m+2)]
 
     opsum = OpSum()
 
-    opsum += 0.25*(-1)^(n_phys+m_phys),"Z",m,"Z",n
+    # Term (a)
+    opsum += (-1)^(phys_sign),"N_tot",m,"N_tot",n
 
-    opsum += 0.25*(-1)^(n_phys+m_phys),"Z",n
-
-    opsum += 0.25*(-1)^(n_phys+m_phys),"Z",m
-
-    opsum += 0.25*(-1)^(n_phys+m_phys),"Id",1
-
+    # Term (b)
     if (n_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",n-2,"S+",n
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",n-2,"S-",n
+        for (coef, op1, idx1, op2, idx2) in Sn_minus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),"N_tot",m,op1,idx1,op2,idx2
+        end
     end
 
     if (n_phys != N)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",n,"S+",n+2
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",n,"S-",n+2
+        for (coef, op1, idx1, op2, idx2) in Sn_plus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),"N_tot",m,op1,idx1,op2,idx2
+        end
     end
 
+    # Term (c)
     if (m_phys != 1)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",m-2,"S+",m
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",m-2,"S-",m
+        for (coef, op1, idx1, op2, idx2) in Sm_minus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),op1,idx1,op2,idx2,"N_tot",n
+        end
     end
-    
+
     if (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",m,"S+",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",m,"S-",m+2
+        for (coef, op1, idx1, op2, idx2) in Sm_plus
+            opsum -= (coef*(-1)^(phys_sign)*prefactor),op1,idx1,op2,idx2,"N_tot",n
+        end
     end
 
-    if (m_phys != 1)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",m-2,"S+",m,"Z",n
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",m-2,"S-",m,"Z",n
-    end
-    
-    if (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",m,"S+",m+2,"Z",n
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",m,"S-",m+2,"Z",n
-    end
-
-    if (n_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"Z",m,"S-",n-2,"S+",n
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"Z",m,"S+",n-2,"S-",n
-    end
-    
-    if (n_phys != N)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"Z",m,"S-",n,"S+",n+2
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"Z",m,"S+",n,"S-",n+2
-    end
-
+    # Term (d)
     if (n_phys != 1) && (m_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m-2,"S-",m,"S+",n-2,"S-",n
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m-2,"S-",m,"S-",n-2,"S+",n
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m-2,"S+",m,"S+",n-2,"S-",n
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m-2,"S+",m,"S-",n-2,"S+",n
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sm_minus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sn_minus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     if (m_phys != 1) && (n_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m-2,"S-",m,"S-",n,"S+",n+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m-2,"S-",m,"S+",n,"S-",n+2
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m-2,"S+",m,"S+",n,"S-",n+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m-2,"S+",m,"S-",n,"S+",n+2
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sm_minus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sn_plus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     if (m_phys != N) && (n_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m,"S-",m+2,"S-",n-2,"S+",n
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m,"S-",m+2,"S+",n-2,"S-",n
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m,"S+",m+2,"S+",n-2,"S-",n
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m,"S+",m+2,"S-",n-2,"S+",n
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sm_plus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sn_minus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
-    
+
     if (n_phys != N) && (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m,"S-",m+2,"S+",n,"S-",n+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",m,"S-",m+2,"S-",n,"S+",n+2
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m,"S+",m+2,"S-",n,"S+",n+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",m,"S+",m+2,"S+",n,"S-",n+2
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sm_plus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sn_plus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     return opsum
     
 end
 
-# TODO: Liouvillian Update
-function get_aLndag_aLm(n, m, aT, sites, side)
+# Note: Liouvillian Update
+function get_aLndag_aLm(n, m, a, T, sites, side)
 
     """
     Gives the operator aL_n_dagger tensor product aL_m can be either acting all on the left or all on the right
     """
 
     N = div(length(sites), 2)
+    J = -1/(2*a)
+    prefactor = J/(4*T)
 
     if side == "left"
         n_phys, m_phys = div(n + 1, 2), div(m + 1, 2)
@@ -653,86 +652,86 @@ function get_aLndag_aLm(n, m, aT, sites, side)
         n_phys, m_phys = div(n, 2), div(m, 2)
     end
     
+    phys_sign = n_phys + m_phys
+
+    Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
+               (-1, "SpSz", n-2, "SmS0", n), (-1, "S0Sp", n-2, "SzSm", n)]
+
+    Sn_plus = [(-1, "SmSz", n, "SpS0", n+2), (-1, "S0Sm", n, "SzSp", n+2), 
+                (1, "SpSz", n, "SmS0", n+2), (1, "S0Sp", n, "SzSm", n+2)]
+
+    Sm_minus = [(1, "SpSz", m-2, "SmS0", m), (1, "S0Sp", m-2, "SzSm", m),
+               (-1, "SmSz", m-2, "SpS0", m), (-1, "S0Sm", m-2, "SzSp", m)]
+    
+    Sm_plus = [(-1, "SpSz", m, "SmS0", m+2), (-1, "S0Sp", m, "SzSm", m+2), 
+                (1, "SmSz", m, "SpS0", m+2), (1, "S0Sm", m, "SzSp", m+2)]
+
     opsum = OpSum()
 
-    opsum += 0.25*(-1)^(n_phys + m_phys),"Z",n,"Z",m
+    # Term (a)
+    opsum += (-1)^(phys_sign),"N_tot",n,"N_tot",m
 
-    opsum += 0.25*(-1)^(n_phys + m_phys),"Z",n
-
-    opsum += 0.25*(-1)^(n_phys + m_phys),"Z",m
-
-    if side == "left"
-        opsum += 0.25*(-1)^(n_phys + m_phys),"Id",1
-    else
-        opsum += 0.25*(-1)^(n_phys + m_phys),"Id",2
+    # Term (b)
+    if (m_phys != 1)
+        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m-2,"SmS0",m
+        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m-2,"SzSm",m
+        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m-2,"SpS0",m
+        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m-2,"SzSp",m
     end
 
+    if (m_phys != N)
+        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"SpSz",m,"SmS0",m+2
+        opsum -= (-(-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sp",m,"SzSm",m+2
+        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"SmSz",m,"SpS0",m+2
+        opsum -= ((-1)^(phys_sign)*prefactor),"N_tot",n,"S0Sm",m,"SzSp",m+2
+    end
+
+    # Term (c)
     if (n_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",n-2,"S+",n
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",n-2,"S-",n
+        opsum -= (-(-1)^(phys_sign)*prefactor),"SpSz",n-2,"SmS0",n,"N_tot",m
+        opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sp",n-2,"SzSm",n,"N_tot",m
+        opsum -= ((-1)^(phys_sign)*prefactor),"SmSz",n-2,"SpS0",n,"N_tot",m
+        opsum -= ((-1)^(phys_sign)*prefactor),"S0Sm",n-2,"SzSp",n,"N_tot",m
     end
 
     if (n_phys != N)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",n,"S+",n+2
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",n,"S-",n+2
+        opsum -= ((-1)^(phys_sign)*prefactor),"SpSz",n,"SmS0",n+2,"N_tot",m
+        opsum -= ((-1)^(phys_sign)*prefactor),"S0Sp",n,"SzSm",n+2,"N_tot",m
+        opsum -= (-(-1)^(phys_sign)*prefactor),"SmSz",n,"SpS0",n+2,"N_tot",m
+        opsum -= (-(-1)^(phys_sign)*prefactor),"S0Sm",n,"SzSp",n+2,"N_tot",m
     end
 
-    if (m_phys != 1)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",m-2,"S+",m
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",m-2,"S-",m
-    end
-    
-    if (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",m,"S+",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",m,"S-",m+2
-    end
-
-    if (n_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S-",n-2,"S+",n,"Z",m
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S+",n-2,"S-",n,"Z",m
-    end
-    
-    if (n_phys != N)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"S-",n,"S+",n+2,"Z",m
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"S+",n,"S-",n+2,"Z",m
-    end
-
-    if (m_phys != 1)
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"Z",n,"S-",m-2,"S+",m
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"Z",n,"S+",m-2,"S-",m
-    end
-    
-    if (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(16*aT)),"Z",n,"S-",m,"S+",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(16*aT)),"Z",n,"S+",m,"S-",m+2
-    end
-
+    # Term (d)
     if (n_phys != 1) && (m_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n-2,"S-",n,"S+",m-2,"S-",m
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n-2,"S-",n,"S-",m-2,"S+",m
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n-2,"S+",n,"S+",m-2,"S-",m
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n-2,"S+",n,"S-",m-2,"S+",m
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sn_minus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sm_minus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     if (n_phys != 1) && (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n-2,"S-",n,"S-",m,"S+",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n-2,"S-",n,"S+",m,"S-",m+2
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n-2,"S+",n,"S+",m,"S-",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n-2,"S+",n,"S-",m,"S+",m+2
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sn_minus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sm_plus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     if (n_phys != N) && (m_phys != 1)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n,"S-",n+2,"S-",m-2,"S+",m
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n,"S-",n+2,"S+",m-2,"S-",m
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n,"S+",n+2,"S+",m-2,"S-",m
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n,"S+",n+2,"S-",m-2,"S+",m
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sn_plus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sm_minus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
-    
+
     if (n_phys != N) && (m_phys != N)
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n,"S-",n+2,"S+",m,"S-",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S+",n,"S-",n+2,"S-",m,"S+",m+2
-        opsum += (-(-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n,"S+",n+2,"S-",m,"S+",m+2
-        opsum += ((-1)^(n_phys + m_phys)/(64*aT^2)),"S-",n,"S+",n+2,"S+",m,"S-",m+2
+        for (coef_n, op1_n, idx1_n, op2_n, idx2_n) in Sn_plus
+            for (coef_m, op1_m, idx1_m, op2_m, idx2_m) in Sm_plus
+                opsum += (coef_n*coef_m*(-1)^(phys_sign)*(prefactor^2)), op1_n, idx1_n, op2_n, idx2_n, op1_m, idx1_m, op2_m, idx2_m
+            end
+        end
     end
 
     return opsum
@@ -976,22 +975,22 @@ function get_odd_even_taylor_groups(opsum, sites)
 
 end
 
-# TODO: Liouvillian Update
-function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, inputs, dissipator_sites)
+# NOTE: Liouvillian Updated
+function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
 
     res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "left")
     res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "right")
     
-    # if D != 0
-    #     for n in dissipator_sites
-    #         for m in dissipator_sites
-    #             if env_corr_type == "delta" && n != m
-    #                 continue
-    #             end
-    #             res += environment_correlator(env_corr_type, n, m, D, inputs) * ( get_aLm_aLndag(2*n, 2*m-1, T, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, T, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, T, sites, "right") )
-    #         end
-    #     end
-    # end
+    if D != 0
+        for n in dissipator_sites
+            for m in dissipator_sites
+                if env_corr_type == "delta" && n != m
+                    continue
+                end
+                res += environment_correlator(env_corr_type, n, m, D) * ( get_aLm_aLndag(2*n, 2*m-1, a, T, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, a, T, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, a, T, sites, "right") )
+            end
+        end
+    end
 
     return res
 
