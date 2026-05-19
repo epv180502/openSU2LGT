@@ -1153,5 +1153,6 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
 end
 
 # QUESTIONS:
-# 1. Why are the bond dimensions of the taylor MPO asymmetrical?
+# 1. Why are the bond dimensions of the taylor MPO asymmetrical? And big for the open case?
 # 2. Conserve_qns?
+# 3. Why did you not have x-dependence in the LnLm stuff?
