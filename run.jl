@@ -166,7 +166,7 @@ function evolve()
         psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites) # This is a normal non-purified MPS
         rho = outer(psi', psi) # Get the density matrix
         rho_vec = convert(MPS, rho) # Convert the density matrix to a purified MPS
-        mps = rho_vec_to_mps(rho_vec) # Split the sites so that each site has one physical index of dimension 2
+        mps = rho_vec_to_mps(rho_vec) # Split the sites so that each site has one physical index of dimension 4
         orthogonalize!(mps, 1) # Bring the center of orthogonalization to the very left        
         return mps
 

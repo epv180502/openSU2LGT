@@ -1,13 +1,21 @@
 using ITensors
 using LinearAlgebra
-using ITensors: ⊗
 
-# TODO: Document when done
+# TODO: Add lamb_shift term
+
 # -------------------------------------------- SiteType Creation ---------------------------------------------
-# TODO: May be possible to reduce it to three since r0 and 0g should be r0 - 0g
+""" We create a custom SiteType "SU2_packed" which is essentially a composite site made up of two spin-1/2 particles.
+    it would have also been possible to use a previously built one but for readeability we do this to identify each 
+    state as a combination of red and green. The order is such that the final site is |red> tensor |green> and all the
+    operators are similarly defined as the tensor product of whatever operator acts on each spin-1/2 system. 
+    
+    Convention used is Sz|0> = -|0>, Sz|a> = |a> and N|0> = 0, N|a> = |a>; where a can be red or green.
+    
+    I also call Id = S0 for convenience later on and to align with notes."""
+
 # TODO: Should be possible to use conserve_qns to enforce the conservation of sigma_Z and delta_sigma_Z
 
-const Id = Float64[1 0;
+const Id = Float64[1 0; 
                    0 1]
 
 const Sz = Float64[1 0;
@@ -60,7 +68,7 @@ make_op(mat, s) = ITensor(mat, prime(s), s)
 # =========================
 
 function ITensors.op(::OpName"IdId", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Id, Id),s)
+    return make_op(LinearAlgebra.kron(Id, Id),s)
 end
 
 # =========================
@@ -68,27 +76,27 @@ end
 # =========================
 
 function ITensors.op(::OpName"SpSz", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sp, Sz),s)
+    return make_op(LinearAlgebra.kron(Sp, Sz),s)
 end
 
 function ITensors.op(::OpName"SmSz", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sm, Sz),s)
+    return make_op(LinearAlgebra.kron(Sm, Sz),s)
 end
 
 function ITensors.op(::OpName"SmS0", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sm, Id),s)
+    return make_op(LinearAlgebra.kron(Sm, Id),s)
 end
 
 function ITensors.op(::OpName"S0Sp", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Id, Sp),s)
+    return make_op(LinearAlgebra.kron(Id, Sp),s)
 end
 
 function ITensors.op(::OpName"SzSm", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sz, Sm),s)
+    return make_op(LinearAlgebra.kron(Sz, Sm),s)
 end
 
 function ITensors.op(::OpName"SzSp", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sz, Sp),s)
+    return make_op(LinearAlgebra.kron(Sz, Sp),s)
 end
 
 
@@ -97,19 +105,19 @@ end
 # =========================
 
 function ITensors.op(::OpName"SpS0", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sp, Id),s)
+    return make_op(LinearAlgebra.kron(Sp, Id),s)
 end
 
 function ITensors.op(::OpName"S0Sm", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Id, Sm),s)
+    return make_op(LinearAlgebra.kron(Id, Sm),s)
 end
 
 function ITensors.op(::OpName"N_r", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(N, Id),s)
+    return make_op(LinearAlgebra.kron(N, Id),s)
 end
 
 function ITensors.op(::OpName"N_g", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Id, N),s) 
+    return make_op(LinearAlgebra.kron(Id, N),s) 
 end
 
 function ITensors.op(::OpName"N_tot", ::SiteType"SU2_packed", s::Index)
@@ -122,7 +130,7 @@ end
 # =========================
 
 function ITensors.op(::OpName"SzSz", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sz, Sz),s)
+    return make_op(LinearAlgebra.kron(Sz, Sz),s)
 end
 
 function ITensors.op(::OpName"1-SzSz", ::SiteType"SU2_packed", s::Index)
@@ -130,19 +138,19 @@ function ITensors.op(::OpName"1-SzSz", ::SiteType"SU2_packed", s::Index)
 end
 
 function ITensors.op(::OpName"SmSp", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sm, Sp),s)
+    return make_op(LinearAlgebra.kron(Sm, Sp),s)
 end
 
 function ITensors.op(::OpName"SpSm", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sp, Sm),s)
+    return make_op(LinearAlgebra.kron(Sp, Sm),s)
 end
 
 function ITensors.op(::OpName"SzS0", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Sz, Id),s)
+    return make_op(LinearAlgebra.kron(Sz, Id),s)
 end
 
 function ITensors.op(::OpName"S0Sz", ::SiteType"SU2_packed", s::Index)
-    return make_op(kron(Id, Sz),s)
+    return make_op(LinearAlgebra.kron(Id, Sz),s)
 end
 
 function ITensors.op(::OpName"DeltaZ", ::SiteType"SU2_packed", s::Index)
@@ -166,15 +174,14 @@ function ITensors.op(::OpName"N_zero", ::SiteType"SU2_packed", s::Index)
     return make_op(diagm([0, 0, 0, 1]), s)
 end
 
-# -------------------------------------------- Hamiltonian Creation ---------------------------------------------
-# What is lambda => Gauge protection QUESTION: Do we need it?
-# QUESTION: Do we need background field? l_0 -> For now I remove them
-
+# -------------------------------------------- System Functions ---------------------------------------------
 # NOTE: Hamiltonian Updated
 function get_aH_Hamiltonian(sites, g2, m, a)
 
     """
-    This gives aH Hamiltonian acting on state vectors and is used to begin the system in an eigenstate
+    This gives the subsystem Hamiltonian acting on state vectors. Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
+    
+    Function used if we want to obtain eigenstates of the hamiltonian.
 
     g2 = Gauge coupling square g**2
     m = Mass
@@ -219,117 +226,9 @@ function get_aH_Hamiltonian(sites, g2, m, a)
 
 end
 
-function apply_odd!(odd, mps, cutoff, maxdim)
-
-    l = length(mps)
-
-    for (n_idx, n) in enumerate(1:4:(l-3)) # n is the left most site the gate acts on, the gates are always 4 site in span
-
-        gate = odd[n_idx]
-
-        t = noprime(gate*prod(mps[n:n+3]))
-
-        # Separate the t tensor into individual MPS site tensors
-        for idx in n:n+2
-            t_indices = inds(t)
-            U_indices = filter(i -> hastags(i, "Site,n=$(idx)") || hastags(i, "Link,l=$(idx-1)"), t_indices)
-            U, S, V = ITensors.svd(t, U_indices; cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(idx)", righttags = "Link,l=$(idx)")
-            t = S*V
-            mps[idx] = U
-        end
-        mps[n+3] = t
-
-        if n+4 <= l
-            # Extra SVD as required by ATD DMRG
-            t = mps[n+3]*mps[n+4]
-            mps[n+3], S, V = ITensors.svd(t, uniqueinds(t, mps[n+4]); cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(n+3)", righttags = "Link,l=$(n+3)")
-            mps[n+4] = S*V
-        end
-
-    end
-
-end
-
-function apply_even!(even, mps, cutoff, maxdim)
-
-    l = length(mps)
-    
-    t = mps[1]*mps[2]
-    mps[1], mps[2] = ITensors.qr(t, uniqueinds(t, mps[2]); tags = "Link,l=$(1)")
-
-    t = mps[2]*mps[3]
-    mps[2], mps[3] = ITensors.qr(t, uniqueinds(t, mps[3]); tags = "Link,l=$(2)")
-
-    for (n_idx, n) in enumerate(3:4:(l-3)) # n is the left most site the gate acts on, the gates are always 4 site in span
-
-        gate = even[n_idx]
-
-        t = noprime(gate*prod(mps[n:n+3]))
-
-        # Separate the t tensor into individual MPS site tensors
-        for idx in n:n+2
-            t_indices = inds(t)
-            U_indices = filter(i -> hastags(i, "Site,n=$(idx)") || hastags(i, "Link,l=$(idx-1)"), t_indices)
-            U, S, V = ITensors.svd(t, U_indices; cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(idx)", righttags = "Link,l=$(idx)")
-            t = S*V
-            mps[idx] = U
-        end
-        mps[n+3] = t
-
-        if n_idx != length(3:4:(l-3))
-            # Extra SVD as required by ATD DMRG
-            t = mps[n+3]*mps[n+4]
-            mps[n+3], S, V = ITensors.svd(t, uniqueinds(t, mps[n+4]); cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(n+3)", righttags = "Link,l=$(n+3)")
-            mps[n+4] = S*V
-        end
-
-    end
-
-end
-
-function ishermitian(mpo; tol = 1e-14)
-
-    return norm(mpo - dag(swapprime(mpo, 0, 1))) < tol
-
-end
-
-function ispositive(mpo; tol = 1e-14)
-
-    """
-    We check this by using DMRG to find the ground state energy of the "density matrix" MPO
-    """
-
-    n = length(mpo)
-    dmrg_tol = tol
-    cutoff = tol
-    sites = dag(reduce(vcat, siteinds(mpo; :plev => 0)))
-    state = [isodd(i) ? "0" : "1" for i = 1:n]
-    psi0 = randomMPS(sites, state)
-    obs = DMRGObserver(;energy_tol = dmrg_tol)
-    nsweeps = 100
-    dmrg_energy, _ = dmrg(mpo, psi0; nsweeps, cutoff, observer=obs, outputlevel=1)
-
-    return abs(dmrg_energy) < tol
-
-end
-
-function lowest_eval_mpo(mpo; tol = 1e-9)
-
-    n = length(mpo)
-    dmrg_tol = tol
-    cutoff = tol
-    sites = dag(reduce(vcat, siteinds(mpo; :plev => 0)))
-    state = [isodd(i) ? "0" : "1" for i = 1:n]
-    psi0 = randomMPS(sites, state)
-    nsweeps = 100
-    dmrg_energy, _ = dmrg(mpo, psi0; nsweeps, cutoff, outputlevel=1, ishermitian = false)
-
-    return dmrg_energy
-
-end
-
 # NOTE: Renamed some variables to add a dependence and erased gaussian environment
 function environment_correlator(type, n, m, D)
+    """ Give the environment correlator strength between given n, m sites where D is the self-correlation D_0"""
     if type == "constant"
         return D
     elseif type == "delta"
@@ -343,15 +242,16 @@ end
 
 # NOTE: Updated to SU2 vacuum
 function get_dirac_vacuum_mps(sites; flip_sites = [])
-    """Function to create the dirac vacuum of an SU2 LGT and, if flip_sites is defined, put a string on top of that state""" 
+    """Function to create the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
+       If flip_sites is defined, put a string on top of that state by flipping the sites outlined in flip_sites""" 
 
     N = length(sites)
-    # state = [isodd(n) ? "rg" : "00" for n = 1:N]    # One linear creates the dirac vacuum
     state = []
     for n in 1:N
 
-        # I put not (!) because I want my sites to begin in even and since julia vector numbering begins in 1
-        # I added a -1 in the hamiltonian when calculating the staggered terms and so the vacuum is [00, rg, ...]
+        # I put not (!) because I want my sites to begin in particles and since julia vector numbering begins in 1 
+        # it would normally begin with antiparticles. Similarly, I added a -1 in the exponent of -1 when calculating 
+        # the staggered terms. The vacuum is [00, rg, ...]
         if !isodd(n)
             if n in flip_sites
                 push!(state, "00")
@@ -372,53 +272,15 @@ function get_dirac_vacuum_mps(sites; flip_sites = [])
 
 end
 
-# NOTE: Updated site name from S=1/2 to SU2_packed
-function rho_vec_to_mps(rho_vec)
-
-    N = length(rho_vec)
-
-    mps = MPS(2*N)
-
-    for i in 1:N
-
-        # this object has 2 physical legs and we want to svd between them to seperate them into two mps tensors
-        M = rho_vec[i]
-
-        # picks the left link and the dashed site indices for the U of SVD
-        left_inds_M = (inds(M; :tags => "Link,l=$(i-1)"), inds(M; :plev => 1))
-
-        U, S, V = ITensors.svd(M, left_inds_M; leftdir = ITensors.In, rightdir = ITensors.In)
-        V = S*V
-
-        # Fix U indices
-        if i != 1
-            replacetags!(U, "Link,l=$(i-1)", "Link,l=$(2*i-2)") # change tag of left link to mps convention
-        end
-        replacetags!(U, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention
-        replacetags!(U, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i-1)") # change the label of the second physical index from i to 2*i-1
-        mps[2*i-1] = U
-
-        # Fix V indices
-        if i != N # if i == N there is no right link
-            replacetags!(V, "Link,l=$(i)", "Link,l=$(2*i)") # same as the line above but for the right link
-        end
-        replacetags!(V, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention (here it is Link,u because of V = S*V above)
-        replacetags!(V, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i)") # change the label of the second physical index from i to 2*i
-        # V = reverse_dir(V, inds(V; :tags => "Site")[1]) # reverse the physical leg direction from in to out - this is mandatory for constructing MPO with autoMPO
-        mps[2*i] = V
-
-    end
-
-    return noprime(mps)
-
-end
-
 # NOTE: Hamiltonian Updated
 function get_double_aH_Hamiltonian(sites, g2, m, a, side)
 
     """
-    This gives aH Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
-    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H
+    This gives H Hamiltonian acting on one side of a vectorized density matrices on a given side. 
+    Side specifies "left" or "right" to imply H tensor product I or vice versa so that is H*rho or rho*H.
+    Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
+
+    Function used to calculate energy expectation values
 
     g2 = Gauge coupling square g**2
     m = Mass
@@ -481,78 +343,28 @@ function get_double_aH_Hamiltonian(sites, g2, m, a, side)
 
 end
 
-function trace_mps(mps)
-
-    sites = siteinds(mps)
-    l = length(mps)
-
-    i = 1
-    left, right = 2*i-1, 2*i
-    res = mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
-
-    for i in 2:div(l,2)
-        left, right = 2*i-1, 2*i
-        res *= mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
-    end
-
-    return res[1]
-
-end
-
-# NOTE: Updated operator to measure to be arbitrary operator you input
-function measure_op(mps, opname, site)
-
-    sites = siteinds(mps)
-    l = length(mps)
-
-    opTens = op(opname, sites[site])
-    mps = apply(opTens, mps)
-
-    i = 1
-    left, right = 2*i-1, 2*i
-    res = mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
-
-    for i in 2:div(l,2)
-        left, right = 2*i-1, 2*i
-        res *= mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
-    end
-
-    return res[1]
-
-end
-
-# NOTE: Updated operator to measure to be arbitrary operator you input
-function measure_op_config(mps, opname; left = true)
-
-    n = length(mps)
-    op_config = []
-    if left
-        for site in 1:2:n
-            push!(op_config, measure_op(mps, opname, site))
-        end
-    else
-        for site in 2:2:n
-            push!(op_config, measure_op(mps, opname, site))
-        end
-    end
-
-    return op_config
-
-end
-
 # NOTE: Liouvillian Update
 function get_aLm_aLndag(n, m, a, T, sites)
 
     """
-    Gives the operator aLm tensor product aLndagger so aLm acts on the left side system and aLndagger on the right
+    Gives the operator Lm tensor product Ln^dagger so Lm acts on the left side system and Ln^dagger on the right.
+    Currently (1+1)D gauge-fields integrated SU2 LGT dissipators.
+
+    For derivations of the long the terms look at notes. 
+
+    n = Site 2
+    m = Site 1
+    a = Lattice spacing
+    T = Temperature
+
     """
 
-    N = div(length(sites), 2)
-    J = -1/(2*a)
-    prefactor = J/(4*T)
+    N = div(length(sites), 2)   # Number of lattice sites
+    J = -1/(2*a)                # Prefactor of kinetic term
+    prefactor = J/(4*T)         # Prefactor of Sn/Sm terms 
 
+    # Physical n,m refer to the lattice sites while n, m refer to the MPO indices
     n_phys, m_phys = div(n, 2), div(m + 1, 2)
-
     phys_sign = n_phys + m_phys
 
     Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
@@ -639,19 +451,29 @@ end
 function get_aLndag_aLm(n, m, a, T, sites, side)
 
     """
-    Gives the operator aL_n_dagger tensor product aL_m can be either acting all on the left or all on the right
+    Gives the operator Ln^dagger tensor product Lm can be either acting all on the left or all on the right
+    Currently (1+1)D gauge-fields integrated SU2 LGT dissipators.
+
+    For derivations of the long terms look at notes. 
+
+    n = Site 2
+    m = Site 1
+    a = Lattice spacing
+    T = Temperature
+    side = Whether it is acting on the left or right of the density matrix in lindblad equation
+
     """
 
-    N = div(length(sites), 2)
-    J = -1/(2*a)
-    prefactor = J/(4*T)
+    N = div(length(sites), 2)   # Number of lattice sites
+    J = -1/(2*a)                # Prefactor of kinetic term
+    prefactor = J/(4*T)         # Prefactor of Sn/Sm terms 
 
+    # Physical n,m refer to the lattice sites while n, m refer to the MPO indices
     if side == "left"
         n_phys, m_phys = div(n + 1, 2), div(m + 1, 2)
     else
         n_phys, m_phys = div(n, 2), div(m, 2)
     end
-    
     phys_sign = n_phys + m_phys
 
     Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
@@ -731,6 +553,368 @@ function get_aLndag_aLm(n, m, a, T, sites, side)
     end
 
     return opsum
+
+end
+
+# NOTE: Liouvillian Updated
+function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
+
+    """
+    This gives L Lindbladian acting on a vectorized density matrix without background "l_0" terms
+    Currently (1+1)D gauge-fields integrated SU2 LGT system
+
+    Function used to get all terms in the lindbladian
+
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = Lattice spacing
+    T = Temperature
+    D = Self-correlation 
+    env_corr_type = What environment correlator do we have (Currently delta or constant)
+    dissipator_sites = What sites the dissipators will act on
+    """
+
+    # Unitary part of the hamiltonian
+    res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "left")
+    res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "right")
+    
+    # Dissipative part 
+    if D != 0
+        for n in dissipator_sites
+            for m in dissipator_sites
+                if env_corr_type == "delta" && n != m
+                    continue
+                end
+                res += environment_correlator(env_corr_type, n, m, D) * ( get_aLm_aLndag(2*n, 2*m-1, a, T, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, a, T, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, a, T, sites, "right") )
+            end
+        end
+    end
+
+    return res
+
+end
+
+# NOTE: Hamiltonian Updated. 
+function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
+
+    """
+    This gives H Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
+    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H
+    Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
+
+    Function used to create the full lindbladian
+
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = lattice spacing
+
+    """
+
+    N = div(length(sites), 2)
+
+    opsum = OpSum()
+
+    # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
+    for n in 1:(N-1)
+
+        if side == "left"
+            n_idx = 2*n-1
+        else
+            n_idx = 2*n 
+        end
+        
+        for m in (n+1):(N-1)
+
+            if side == "left"
+                m_idx = 2*m-1
+            else
+                m_idx = 2*m
+            end
+            
+            # Long range ZZ interaction term
+            opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
+
+            # Long range hopping interaction term
+            opsum += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
+            opsum += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
+
+        end
+
+        # Kinetic term
+        opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+        opsum += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
+        opsum += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
+
+        # Inverse Z term
+        opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
+        
+        # Mass term
+        opsum += (m*(-1)^(n-1)),"N_tot",n_idx
+
+    end
+
+    # The for loop on top only goes to N-1 so we add the last term manually
+    if side == "left"
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N-1
+    else
+        opsum += (m*(-1)^(N-1)),"N_tot",2*N
+    end
+
+    return opsum
+end
+
+# NOTE: Hamiltonian Updated. 
+function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
+
+    """
+    This gives H Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
+    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H. This function gives each contribution 
+    to the hamiltonian separately, that is kinetic_terms, electric_terms, and mass_terms
+    Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
+
+    Function used to calculate the distribution of energy in the system
+
+    g2 = Gauge coupling square g**2
+    m = Mass
+    a = lattice spacing
+
+    """
+
+    opsum_kinetic_term = OpSum()
+    opsum_mass_term = OpSum()
+    opsum_electric_field_term = OpSum()
+
+    for n in 1:(N-1)
+
+        if side == "left"
+            n_idx = 2*n-1
+        else
+            n_idx = 2*n 
+        end
+        
+        for m in (n+1):(N-1)
+
+            if side == "left"
+                m_idx = 2*m-1
+            else
+                m_idx = 2*m
+            end
+
+            # Long range ZZ interaction term
+            opsum_electric_field_term += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
+
+            # Long range hopping interaction term
+            opsum_electric_field_term += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
+            opsum_electric_field_term += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
+
+        end
+
+        # Kinetic term
+        opsum_kinetic_term += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
+        opsum_kinetic_term += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
+
+        # Inverse Z term
+        opsum_electric_field_term += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
+        
+        # Mass term
+        opsum_mass_term += (m*(-1)^(n-1)),"N_tot",n_idx
+
+    end
+
+    # The for loop on top only goes to N-1 so we add the last term manually
+    if side == "left"
+        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N-1
+    else
+        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N
+    end
+
+
+    return opsum_kinetic_term, opsum_electric_field_term, opsum_mass_term
+
+end
+
+# -------------------------------------------- Tensor Network Functions ---------------------------------------------
+# NOTE: Updated site name from S=1/2 to SU2_packed
+function rho_vec_to_mps(rho_vec)
+
+    """ Transform a purified MPS representing a vectorized density matrix into a proper MPS by splitting each 
+        site (which currently has two legts) into two separate sites with each a dimension of 4 """
+
+    N = length(rho_vec)
+
+    mps = MPS(2*N)
+
+    for i in 1:N
+
+        # this object has 2 physical legs and we want to svd between them to seperate them into two mps tensors
+        M = rho_vec[i]
+
+        # picks the left link and the dashed site indices for the U of SVD
+        left_inds_M = (inds(M; :tags => "Link,l=$(i-1)"), inds(M; :plev => 1))
+
+        U, S, V = ITensors.svd(M, left_inds_M; leftdir = ITensors.In, rightdir = ITensors.In)
+        V = S*V
+
+        # Fix U indices
+        if i != 1
+            replacetags!(U, "Link,l=$(i-1)", "Link,l=$(2*i-2)") # change tag of left link to mps convention
+        end
+        replacetags!(U, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention
+        replacetags!(U, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i-1)") # change the label of the second physical index from i to 2*i-1
+        mps[2*i-1] = U
+
+        # Fix V indices
+        if i != N # if i == N there is no right link
+            replacetags!(V, "Link,l=$(i)", "Link,l=$(2*i)") # same as the line above but for the right link
+        end
+        replacetags!(V, "Link,u", "Link,l=$(2*i-1)") # change tag of svd link to mps convention (here it is Link,u because of V = S*V above)
+        replacetags!(V, "SU2_packed,Site,n=$(i)", "SU2_packed,Site,n=$(2*i)") # change the label of the second physical index from i to 2*i
+        # V = reverse_dir(V, inds(V; :tags => "Site")[1]) # reverse the physical leg direction from in to out - this is mandatory for constructing MPO with autoMPO
+        mps[2*i] = V
+
+    end
+
+    return noprime(mps)
+
+end
+
+function apply_odd!(odd, mps, cutoff, maxdim)
+
+    """ Apply the odd gates to the MPS. Because of the structure of n, n', n+1, n+1'; these are four site operators"""
+
+    l = length(mps)
+
+    for (n_idx, n) in enumerate(1:4:(l-3)) # n is the left most site the gate acts on, the gates are always 4 site in span
+
+        gate = odd[n_idx]
+
+        t = noprime(gate*prod(mps[n:n+3]))
+
+        # Separate the t tensor into individual MPS site tensors
+        for idx in n:n+2
+            t_indices = inds(t)
+            U_indices = filter(i -> hastags(i, "Site,n=$(idx)") || hastags(i, "Link,l=$(idx-1)"), t_indices)
+            U, S, V = ITensors.svd(t, U_indices; cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(idx)", righttags = "Link,l=$(idx)")
+            t = S*V
+            mps[idx] = U
+        end
+        mps[n+3] = t
+
+        if n+4 <= l
+            # Extra SVD as required by ATD DMRG
+            t = mps[n+3]*mps[n+4]
+            mps[n+3], S, V = ITensors.svd(t, uniqueinds(t, mps[n+4]); cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(n+3)", righttags = "Link,l=$(n+3)")
+            mps[n+4] = S*V
+        end
+
+    end
+
+end
+
+function apply_even!(even, mps, cutoff, maxdim)
+
+    """ Apply the even gates to the MPS. Because of the structure of n, n', n+1, n+1'; these are four site operators"""
+
+    l = length(mps)
+    
+    t = mps[1]*mps[2]
+    mps[1], mps[2] = ITensors.qr(t, uniqueinds(t, mps[2]); tags = "Link,l=$(1)")
+
+    t = mps[2]*mps[3]
+    mps[2], mps[3] = ITensors.qr(t, uniqueinds(t, mps[3]); tags = "Link,l=$(2)")
+
+    for (n_idx, n) in enumerate(3:4:(l-3)) # n is the left most site the gate acts on, the gates are always 4 site in span
+
+        gate = even[n_idx]
+
+        t = noprime(gate*prod(mps[n:n+3]))
+
+        # Separate the t tensor into individual MPS site tensors
+        for idx in n:n+2
+            t_indices = inds(t)
+            U_indices = filter(i -> hastags(i, "Site,n=$(idx)") || hastags(i, "Link,l=$(idx-1)"), t_indices)
+            U, S, V = ITensors.svd(t, U_indices; cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(idx)", righttags = "Link,l=$(idx)")
+            t = S*V
+            mps[idx] = U
+        end
+        mps[n+3] = t
+
+        if n_idx != length(3:4:(l-3))
+            # Extra SVD as required by ATD DMRG
+            t = mps[n+3]*mps[n+4]
+            mps[n+3], S, V = ITensors.svd(t, uniqueinds(t, mps[n+4]); cutoff = cutoff, maxdim = maxdim, lefttags = "Link,l=$(n+3)", righttags = "Link,l=$(n+3)")
+            mps[n+4] = S*V
+        end
+
+    end
+
+end
+
+function trace_mps(mps)
+
+    """ Take the trace of the MPS. At this is a density matrix, not a sate vector, this is the correct way to normalize after truncation"""
+
+    sites = siteinds(mps)
+    l = length(mps)
+
+    i = 1
+    left, right = 2*i-1, 2*i
+    res = mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
+
+    for i in 2:div(l,2)
+        left, right = 2*i-1, 2*i
+        res *= mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
+    end
+
+    return res[1]
+
+end
+
+# NOTE: Updated operator to measure to be arbitrary operator you input
+function measure_op(mps, opname, site)
+
+    """ Measure any operator on a given site of the mps """
+
+    sites = siteinds(mps)
+    l = length(mps)
+
+    opTens = op(opname, sites[site])
+    mps = apply(opTens, mps)
+
+    i = 1
+    left, right = 2*i-1, 2*i
+    res = mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
+
+    for i in 2:div(l,2)
+        left, right = 2*i-1, 2*i
+        res *= mps[left]*mps[right]*dag(delta(sites[left], sites[right]))
+    end
+
+    return res[1]
+
+end
+
+# NOTE: Updated operator to measure to be arbitrary operator you input
+function measure_op_config(mps, opname; left = true)
+
+    """ Measure any operator on all the sites of the mps """
+
+    n = length(mps)
+    op_config = []
+    if left
+        for site in 1:2:n
+            push!(op_config, measure_op(mps, opname, site))
+        end
+    else
+        for site in 2:2:n
+            push!(op_config, measure_op(mps, opname, site))
+        end
+    end
+
+    return op_config
 
 end
 
@@ -971,95 +1155,9 @@ function get_odd_even_taylor_groups(opsum, sites)
 
 end
 
-# NOTE: Liouvillian Updated
-function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
-
-    res = -1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "left")
-    res += 1im*get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, "right")
-    
-    if D != 0
-        for n in dissipator_sites
-            for m in dissipator_sites
-                if env_corr_type == "delta" && n != m
-                    continue
-                end
-                res += environment_correlator(env_corr_type, n, m, D) * ( get_aLm_aLndag(2*n, 2*m-1, a, T, sites) - 0.5 * get_aLndag_aLm(2*n-1, 2*m-1, a, T, sites, "left") - 0.5 * get_aLndag_aLm(2*n, 2*m, a, T, sites, "right") )
-            end
-        end
-    end
-
-    return res
-
-end
-
-# NOTE: Hamiltonian Updated. 
-function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
-
-    """
-    This gives aH Hamiltonian acting on one side of a vectorized density matrices on a given side. Side specifies "left" or 
-    "right" to imply H tensor product I or vice versa so that is H*rho or rho*H
-
-    g2 = Gauge coupling square g**2
-    m = Mass
-    a = lattice spacing
-
-    """
-
-    N = div(length(sites), 2)
-
-    opsum = OpSum()
-
-    # In this loop, n is the physical index, n_idx is the index of the tensor in the MPS
-    for n in 1:(N-1)
-
-        if side == "left"
-            n_idx = 2*n-1
-        else
-            n_idx = 2*n 
-        end
-        
-        for m in (n+1):(N)
-
-            if side == "left"
-                m_idx = 2*m-1
-            else
-                m_idx = 2*m
-            end
-            
-            # Long range ZZ interaction term
-            opsum += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
-
-            # Long range hopping interaction term
-            opsum += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
-            opsum += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
-
-        end
-
-        # Kinetic term
-        opsum += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
-        opsum += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
-        opsum += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
-        opsum += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
-
-        # Inverse Z term
-        opsum += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
-        
-        # Mass term
-        opsum += (m*(-1)^(n-1)),"N_tot",n_idx
-
-    end
-
-    # The for loop on top only goes to N-1 so we add the last term manually
-    if side == "left"
-        opsum += (m*(-1)^(N-1)),"N_tot",2*N-1
-    else
-        opsum += (m*(-1)^(N-1)),"N_tot",2*N
-    end
-
-    return opsum
-end
-
 function measure_mpo(mps, mpo; alg = "none")
+
+    """ Measure the expectation value of an MPO on an mps """
 
     sites = siteinds(mps)
     l = length(mps)
@@ -1083,73 +1181,8 @@ function measure_mpo(mps, mpo; alg = "none")
 
 end
 
-# NOTE: Hamiltonian Updated. 
-function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
-
-    """
-    This gives aH Hamiltonian dividing between kinetic, electric and mass contributions
-
-    side specifies "left" or "right" to imply H tensor product I or vice versa
-
-    """
-
-    opsum_kinetic_term = OpSum()
-    opsum_mass_term = OpSum()
-    opsum_electric_field_term = OpSum()
-
-    for n in 1:(N-1)
-
-        if side == "left"
-            n_idx = 2*n-1
-        else
-            n_idx = 2*n 
-        end
-        
-        for m in (n+1):(N-1)
-
-            if side == "left"
-                m_idx = 2*m-1
-            else
-                m_idx = 2*m
-            end
-
-            # Long range ZZ interaction term
-            opsum_electric_field_term += (a*g2/2)*(1/8)*(N-m),"DeltaZ",n_idx,"DeltaZ",m_idx
-
-            # Long range hopping interaction term
-            opsum_electric_field_term += (a*g2/2)*(N-m),"SmSp",n_idx,"SpSm",m_idx
-            opsum_electric_field_term += (a*g2/2)*(N-m),"SpSm",n_idx,"SmSp",m_idx
-
-        end
-
-        # Kinetic term
-        opsum_kinetic_term += -(1/(2*a)),"SpSz",n_idx,"SmS0",n_idx+2
-        opsum_kinetic_term += -(1/(2*a)),"S0Sp",n_idx,"SzSm",n_idx+2
-        opsum_kinetic_term += -(1/(2*a)),"SmSz",n_idx,"SpS0",n_idx+2
-        opsum_kinetic_term += -(1/(2*a)),"S0Sm",n_idx,"SzSp",n_idx+2
-
-        # Inverse Z term
-        opsum_electric_field_term += (a*g2/2)*(3/8)*(N-n),"1-SzSz",n_idx
-        
-        # Mass term
-        opsum_mass_term += (m*(-1)^(n-1)),"N_tot",n_idx
-
-    end
-
-    # The for loop on top only goes to N-1 so we add the last term manually
-    if side == "left"
-        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N-1
-    else
-        opsum_mass_term += (m*(-1)^(N-1)),"N_tot",2*N
-    end
-
-
-    return opsum_kinetic_term, opsum_electric_field_term, opsum_mass_term
-
-end
-
 # QUESTIONS:
-# 1. Why are the bond dimensions of the taylor MPO asymmetrical? And big for the open case?
+# 1. Why are the bond dimensions of the taylor MPO asymmetrical? And big for the open case? Taylor MPO is huge
 # 2. Conserve_qns?
 # 3. Why did you not have x-dependence in the LnLm stuff?
 # 4. How did you keep track of the electric field?
