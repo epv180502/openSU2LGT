@@ -52,7 +52,7 @@ function evolve()
     N = inputs["N"]
     function get_initial_state()
 
-        sites_initial_state = siteinds("S=SU2_packed", N, conserve_qns = conserve_qns)
+        sites_initial_state = siteinds("SU2_packed", N, conserve_qns = conserve_qns)
 
         if rerun_mode # case of rerunning the script from saved data
 

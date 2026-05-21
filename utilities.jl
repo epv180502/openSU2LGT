@@ -11,7 +11,8 @@ using LinearAlgebra
     
     Convention used is Sz|0> = -|0>, Sz|a> = |a> and N|0> = 0, N|a> = |a>; where a can be red or green.
     
-    I also call Id = S0 for convenience later on and to align with notes."""
+    I also call Id = S0 for convenience later on and to align with notes.
+    Some of the operators are superfluous/repeated but I write them out explicitaly for readability"""
 
 # TODO: Should be possible to use conserve_qns to enforce the conservation of sigma_Z and delta_sigma_Z
 
@@ -124,7 +125,6 @@ function ITensors.op(::OpName"N_tot", ::SiteType"SU2_packed", s::Index)
     return op("N_r", s) + op("N_g", s)
 end
 
-
 # =========================
 # ELECTRIC OPERATORS
 # =========================
@@ -159,7 +159,7 @@ end
 
 
 # =========================
-# EXTRA OPERATORS
+# Number operators
 # =========================
 
 function ITensors.op(::OpName"N_pair", ::SiteType"SU2_packed", s::Index)
@@ -172,6 +172,27 @@ end
 
 function ITensors.op(::OpName"N_zero", ::SiteType"SU2_packed", s::Index)
     return make_op(diagm([0, 0, 0, 1]), s)
+end
+
+# =========================
+# Charge operators
+# =========================
+
+function ITensors.op(::OpName"Qx", ::SiteType"SU2_packed", s::Index)
+    return (1/2) * (op("SpSm", s) + op("SmSp", s))
+end
+
+function ITensors.op(::OpName"Qy", ::SiteType"SU2_packed", s::Index)
+    return (1im/2) * (op("SmSp", s) - op("SpSm", s))
+end
+
+function ITensors.op(::OpName"Qz", ::SiteType"SU2_packed", s::Index)
+    return (1/4) * (op("SzS0", s) - op("S0Sz", s))
+end
+
+function ITensors.op(::OpName"Q2", ::SiteType"SU2_packed", s::Index)
+    # The charge square is independent of the x,y,z, dof, it is equal for all three
+    return (1/8) * (op("IdId", s) - op("SzSz", s))
 end
 
 # -------------------------------------------- System Functions ---------------------------------------------
@@ -876,7 +897,7 @@ end
 # NOTE: Updated operator to measure to be arbitrary operator you input
 function measure_op(mps, opname, site)
 
-    """ Measure any operator on a given site of the mps """
+    """ Measure any local operator on a given site of the mps """
 
     sites = siteinds(mps)
     l = length(mps)
@@ -915,6 +936,50 @@ function measure_op_config(mps, opname; left = true)
     end
 
     return op_config
+
+end
+
+function get_T2n(n; side="left")
+    # TODO: Instead of being for site n, make it return the list for all sites since I can reuse the previously
+    # calculated terms for the following sites
+    """ 
+    Get T squared lattice site n 
+    This requires its own function as the integrated version does not 'keep track' of the gauge links, 
+    instead we must reconstruct it from the charges of all previous sites. 
+    """
+
+    # Construct the electric field MPO
+    opsum = OpSum()
+
+    for p in 1:n
+
+        if side == "left"
+            p_idx = 2*p-1
+        else
+            p_idx = 2*p 
+        end
+
+        # Diagonal part
+        opsum += 3, "Q2", p_idx
+
+        for q in (p+1):n
+
+            if side == "left"
+                q_idx = 2*q-1
+            else
+                q_idx = 2*q
+            end
+            
+            # Off-diagonal part
+            opsum += 2,"Qx",p_idx,"Qx",q_idx
+            opsum += 2,"Qy",p_idx,"Qy",q_idx
+            opsum += 2,"Qz",p_idx,"Qz",q_idx
+
+        end
+
+    end
+
+    return opsum
 
 end
 
@@ -1186,3 +1251,4 @@ end
 # 2. Conserve_qns?
 # 3. Why did you not have x-dependence in the LnLm stuff?
 # 4. How did you keep track of the electric field?
+# 5. What decides which algorithm you use when measuring MPO's?

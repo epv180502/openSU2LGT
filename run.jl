@@ -130,7 +130,7 @@ function evolve()
     D = parsedArgs["D"]                             # Self-correlation
     env_corr_type = parsedArgs["env_corr_type"]     # Type of correlator
     l_0 = parsedArgs["l_0"]                         # Background electric field
-    number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps
+    number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps (does not include the 0th time)
     len = parsedArgs["len"]                         # Length of the string 
     tau = parsedArgs["tau"]                         # Timestep
     dissipator_sites = collect(1:N)                 # Site to be acted upon by the env. Defaulted to all
@@ -144,11 +144,16 @@ function evolve()
     # Print the parameters we parsed
     println("Parsed args:")
     for (arg, val) in parsedArgs
-        println("  $arg  =>  $val")
+        println("$arg  =>  $val")
     end
 
     # Construct filename 
-    path_to_results = string(folder, "os_N_", N, "_g2", g2, "_m", m, ".h5")
+    simulation_desc = string("SU2_timeSim")
+    system_desc = string("_N", N, "a", a, "g", g2, "m", m, "D", D, "T", T, "env", env_corr_type)
+    dyn_desc = string("_dt", tau, "nsteps", number_of_time_steps, "len", len)
+    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2)
+    path_to_results = string(folder, simulation_desc, system_desc, dyn_desc, TNparameters_desc, ".h5")
+    println("Results will be saved in $path_to_results")
 
     # ------------------------------------- Create the initial state -------------------------------------
     # Sites which need to be flipped
@@ -184,6 +189,11 @@ function evolve()
     H = MPO(H, sites)
     H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
+    T2n = [MPO(get_T2n(n), sites) for n in 1:N]
+
+    # for (n, T2) in enumerate(T2n)
+    #     println(linkdims(T2))
+    # end
 
     # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and 
     # combining this with the swapprime done on the operators later the transpose is taken on the operators acting 
@@ -247,6 +257,11 @@ function evolve()
     m_energy[1] = measure_mpo(mps, H_m; alg="naive")
     el_energy = zeros(ComplexF64, number_of_time_steps + 1)
     el_energy[1] = measure_mpo(mps, H_el; alg="naive")
+
+    T2_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
+    for (n, T2) in enumerate(T2n)
+        T2_configs[1,n] = measure_mpo(mps, T2; alg="naive")
+    end
     println("Finished getting the lists for the tracked observables")
 
 
@@ -277,6 +292,10 @@ function evolve()
         m_energy[step+1] = measure_mpo(mps, H_m)
         el_energy[step+1] = measure_mpo(mps, H_el)
 
+        for (n, T2) in enumerate(T2n)
+            T2_configs[step+1,n] = measure_mpo(mps, T2)
+        end
+
         # Monitor bond dimension
         println("Step = $(step), Links = $(linkdims(mps))")
     end
@@ -288,6 +307,7 @@ function evolve()
     write(results_file, "pair_configs", pair_configs)
     write(results_file, "zero_configs", zero_configs)
     write(results_file, "total_configs", total_configs)
+    write(results_file, "T2_configs", T2_configs)
     write(results_file, "link_dims", link_dims)
     write(results_file, "energy", energy)
     write(results_file, "kin_energy", kin_energy)
