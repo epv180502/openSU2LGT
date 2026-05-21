@@ -154,16 +154,15 @@ function evolve()
     TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2)
     path_to_results = string(folder, simulation_desc, system_desc, dyn_desc, TNparameters_desc, ".h5")
     println("Results will be saved in $path_to_results")
+    flush(stdout)
 
     # ------------------------------------- Create the initial state -------------------------------------
+    start = time()
     # Sites which need to be flipped
     ind_start = Int(round(N / 2 - len / 2)) + 1
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
-    println("flip sites ", flip_sites)
 
     # Prepare the initial state
-    println("Now getting the initial state")
-
     "Local helper function to get the Dirac vacuum with a string of lenght 'len' on top"
     function get_initial_state()
         # Prepare the dirac vacuum with a string on top
@@ -178,12 +177,13 @@ function evolve()
     end
     mps = get_initial_state()
     sites = siteinds(mps)
-    println("Finished getting the initial state")
-
+    
+    println("Finished getting the initial state in $(time() - start) seconds")
+    flush(stdout)
     # ------------------------------------- Create the hamiltonian -------------------------------------
     # Get the taylor, odd and even opsum groups without the l0 terms
-    println("Now getting the odd, even and taylor gates without the l0 terms")
-
+    start = time()
+    
     side = "left"
     H = get_double_aH_Hamiltonian(sites, g2, m, a, side)
     H = MPO(H, sites)
@@ -204,7 +204,6 @@ function evolve()
 
     opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
     nn_odd_without_l0_terms, nn_even_without_l0_terms, taylor = get_odd_even_taylor_groups(opsum_without_l0_terms, sites)
-    println("Finished getting the odd, even and taylor gates without the l0 terms")
 
     # NOTE: Currently we are not using a background field but if we do we need to add it in the odd/even terms 
 
@@ -216,14 +215,13 @@ function evolve()
     # println("Finished getting the odd, even and taylor gates with just the l0 terms")
 
     # Gather the two odd and even gates
-    println("Now putting all the even and odd together")
-
     odd = get_odd(sites, tau / 2, nn_odd_without_l0_terms)
     even = get_even(sites, tau, nn_even_without_l0_terms)
-    println("Finished putting all the even and odd together")
+    println("Finished getting the odd, even and taylor gates without the l0 terms in $(time() - start) seconds")
+    flush(stdout)
 
     # Get the MPO for the Taylor expansion
-    println("Now getting the MPO for the taylor expansion")
+    start = time()
     taylor_mpo_tmp = 0.5 * tau * MPO(taylor, sites)
     truncate!(taylor_mpo_tmp; cutoff=taylor_expansion_cutoff_1)
 
@@ -233,12 +231,12 @@ function evolve()
 
     taylor_mpo = get_mpo_taylor_expansion(taylor_mpo_tmp, taylor_expansion_order, taylor_expansion_cutoff_2, sites)
     println("The taylor_mpo with taylor order $(taylor_expansion_order) and cutoffs $(taylor_expansion_cutoff_1), $(taylor_expansion_cutoff_2) has bond dimensions ", linkdims(taylor_mpo))
-
-    println("Finished getting the MPO for the taylor expansion")
+    println("Finished getting taylor MPO in $(time() - start) seconds")
+    flush(stdout)
 
     # ------------------------------------- Get the observables to be measured -------------------------------------
     # Starting the lists of the observables we want to keep track of
-    println("Now getting the lists for the tracked observables")
+    start = time()
     single_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
     single_configs[1, :] = measure_op_config(mps, "N_single")
     pair_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
@@ -262,14 +260,16 @@ function evolve()
     for (n, T2) in enumerate(T2n)
         T2_configs[1,n] = measure_mpo(mps, T2; alg="naive")
     end
-    println("Finished getting the lists for the tracked observables")
-
+    println("Finished getting the lists for the tracked observables in $(time() - start) seconds")
+    flush(stdout)
 
     # Open the HDF5 file for the results
     results_file = h5open(path_to_results, "w")
 
     # ------------------------------------- Run Simulation -------------------------------------
     for step in 1:number_of_time_steps
+        start = time()
+
         # One time step with ATDDMRG
         apply_odd!(odd, mps, cutoff, maxdim)
         mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
@@ -297,12 +297,13 @@ function evolve()
         end
 
         # Monitor bond dimension
-        println("Step = $(step), Links = $(linkdims(mps))")
+        println("Step = $(step), Time = $(time() - start), Links = $(linkdims(mps))")
+        flush(stdout)
     end
 
     # ------------------------------------- Save Simulation -------------------------------------
     # Write tracked observables to results h5 file
-    println("Now writing the observables to results HDF5 file")
+    start = time()
     write(results_file, "single_configs", single_configs)
     write(results_file, "pair_configs", pair_configs)
     write(results_file, "zero_configs", zero_configs)
@@ -314,11 +315,13 @@ function evolve()
     write(results_file, "m_energy", m_energy)
     write(results_file, "el_energy", el_energy)
     close(results_file)
-    println("Finished writing the observables to results h5 file")
+    println("Finished writing the observables to results h5 file in $(time() - start) seconds")
+    flush(stdout)
 end
 
 # Run the function performing the evolution
+start_tot = time()
 evolve()
-
+println("Total simulation done in $(time() - start_tot) seconds")
 
 
