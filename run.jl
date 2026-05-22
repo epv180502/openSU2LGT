@@ -69,10 +69,15 @@ function parseCommandline()
         arg_type = Float64
         default = 0.0
 
-        "--nsteps"
-        help = "number of steps"
-        arg_type = Int
-        default = 100
+        # "--nsteps"
+        # help = "number of steps"
+        # arg_type = Int
+        # default = 100
+
+        "--tF"
+        help = "final time"
+        arg_type = Float64
+        default = 1.0
 
         "--l_0"
         help = "background field"
@@ -108,6 +113,11 @@ function parseCommandline()
         help = "path to folder where data will be stored"
         arg_type = String
         default = "./"
+
+        "--qns"
+        help = "conserve quantum numbers"
+        arg_type = Bool
+        default = false
     end
     return parse_args(s)
 end
@@ -130,7 +140,8 @@ function evolve()
     D = parsedArgs["D"]                             # Self-correlation
     env_corr_type = parsedArgs["env_corr_type"]     # Type of correlator
     l_0 = parsedArgs["l_0"]                         # Background electric field
-    number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps (does not include the 0th time)
+    # number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps (does not include the 0th time)
+    final_time = parsedArgs["tF"]                   # Final time to be reached
     len = parsedArgs["len"]                         # Length of the string 
     tau = parsedArgs["tau"]                         # Timestep
     dissipator_sites = collect(1:N)                 # Site to be acted upon by the env. Defaulted to all
@@ -140,6 +151,9 @@ function evolve()
     cutoff = parsedArgs["cutoff"]                   # Cutoff of the SVD. Maximum normalization to be truncated in SVD
     maxdim = parsedArgs["maxdim"]                   # Maximum bond dimension
     folder = parsedArgs["folder"]                   # Folder to store results        
+    quantum_number_flag = parsedArgs["qns"]
+
+    number_of_time_steps = Int(round((final_time - 0) / tau))
 
     # Print the parameters we parsed
     println("Parsed args:")
@@ -163,10 +177,11 @@ function evolve()
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
 
     # Prepare the initial state
+    # TODO: This does not prepare a string but a baryon-antibaryon pair
     "Local helper function to get the Dirac vacuum with a string of lenght 'len' on top"
     function get_initial_state()
         # Prepare the dirac vacuum with a string on top
-        sites_initial_state = siteinds("SU2_packed", N)   # TODO: Add conserve_qns
+        sites_initial_state = siteinds("SU2_packed", N; conserve_qns=quantum_number_flag)   # TODO: Add conserve_qns
         psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites) # This is a normal non-purified MPS
         rho = outer(psi', psi) # Get the density matrix
         rho_vec = convert(MPS, rho) # Convert the density matrix to a purified MPS
@@ -190,10 +205,6 @@ function evolve()
     H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
     T2n = [MPO(get_T2n(n), sites) for n in 1:N]
-
-    # for (n, T2) in enumerate(T2n)
-    #     println(linkdims(T2))
-    # end
 
     # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and 
     # combining this with the swapprime done on the operators later the transpose is taken on the operators acting 

@@ -14,7 +14,7 @@ using LinearAlgebra
     I also call Id = S0 for convenience later on and to align with notes.
     Some of the operators are superfluous/repeated but I write them out explicitaly for readability"""
 
-# TODO: Should be possible to use conserve_qns to enforce the conservation of sigma_Z and delta_sigma_Z
+# TODO: Should be possible to use conserve_qns to enforce the conservation of N_tot and delta_sigma_Z
 
 const Id = Float64[1 0; 
                    0 1]
@@ -1252,3 +1252,5 @@ end
 # 3. Why did you not have x-dependence in the LnLm stuff?
 # 4. How did you keep track of the electric field?
 # 5. What decides which algorithm you use when measuring MPO's?
+# 6. How do I write the string state?
+# 7. How long do simulations take?
