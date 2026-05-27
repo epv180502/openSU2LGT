@@ -165,7 +165,7 @@ function evolve()
     simulation_desc = string("SU2_timeSim")
     system_desc = string("_N", N, "a", a, "g", g2, "m", m, "D", D, "T", T, "env", env_corr_type)
     dyn_desc = string("_dt", tau, "nsteps", number_of_time_steps, "len", len)
-    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2)
+    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2, "QN", quantum_number_flag)
     path_to_results = string(folder, simulation_desc, system_desc, dyn_desc, TNparameters_desc, ".h5")
     println("Results will be saved in $path_to_results")
     flush(stdout)
@@ -175,6 +175,9 @@ function evolve()
     # Sites which need to be flipped
     ind_start = Int(round(N / 2 - len / 2)) + 1
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
+
+    # julia --project=. run.jl --N 4 --g2 1 --m 1 --T 10 --D 0 --tau 0.01 --maxdim 128 --len 0 --a 1 --cutoff 1E-11 --tec_1 1E-9 --tec_2 1E-9 --teo 1 --tF 0.05 
+    # Takes 139 seconds to run before implementing conserve_qns
 
     # Prepare the initial state
     # TODO: This does not prepare a string but a baryon-antibaryon pair
@@ -278,39 +281,77 @@ function evolve()
     results_file = h5open(path_to_results, "w")
 
     # ------------------------------------- Run Simulation -------------------------------------
+    # Code with minimal time overview
+    # time_start = time()
+    # for step in 1:number_of_time_steps
+    #     start = time()
+
+    #     # One time step with ATDDMRG
+    #     apply_odd!(odd, mps, cutoff, maxdim)
+    #     mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+    #     apply_even!(even, mps, cutoff, maxdim)
+    #     mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+    #     apply_odd!(odd, mps, cutoff, maxdim)
+
+    #     # Fix trace
+    #     mps /= trace_mps(mps)
+
+    #     # Compute the tracked observables
+    #     single_configs[step+1, :] = measure_op_config(mps, "N_single")
+    #     pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
+    #     zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
+    #     total_configs[step+1, :] = measure_op_config(mps, "N_tot")
+    #     linkdims_of_step = linkdims(mps)
+    #     link_dims[step+1, :] = linkdims_of_step
+    #     energy[step+1] = measure_mpo(mps, H)
+    #     kin_energy[step+1] = measure_mpo(mps, H_kin)
+    #     m_energy[step+1] = measure_mpo(mps, H_m)
+    #     el_energy[step+1] = measure_mpo(mps, H_el)
+
+    #     for (n, T2) in enumerate(T2n)
+    #         T2_configs[step+1,n] = measure_mpo(mps, T2; alg="naive")
+    #     end
+
+    #     # Monitor bond dimension
+    #     println("Step = $(step), Time = $(time() - start), Links = $(linkdims(mps))")
+    #     flush(stdout)
+    # end
+    # println("Time simulation done in: $(time() - time_start) seconds")
+
+    # Code with time overview for debugging/optimization
+    time_start = time()
     for step in 1:number_of_time_steps
         start = time()
 
-        # One time step with ATDDMRG
-        apply_odd!(odd, mps, cutoff, maxdim)
-        mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
-        apply_even!(even, mps, cutoff, maxdim)
-        mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
-        apply_odd!(odd, mps, cutoff, maxdim)
+        t_odd1 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
+        t_taylor1 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+        t_even = @elapsed apply_even!(even, mps, cutoff, maxdim)
+        t_taylor2 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+        t_odd2 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
 
-        # Fix trace
-        mps /= trace_mps(mps)
+        t_trace = @elapsed mps /= trace_mps(mps)
 
-        # Compute the tracked observables
-        single_configs[step+1, :] = measure_op_config(mps, "N_single")
-        pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
-        zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
-        total_configs[step+1, :] = measure_op_config(mps, "N_tot")
-        linkdims_of_step = linkdims(mps)
-        link_dims[step+1, :] = linkdims_of_step
-        energy[step+1] = measure_mpo(mps, H)
-        kin_energy[step+1] = measure_mpo(mps, H_kin)
-        m_energy[step+1] = measure_mpo(mps, H_m)
-        el_energy[step+1] = measure_mpo(mps, H_el)
+        t_obs_single = @elapsed single_configs[step+1, :] = measure_op_config(mps, "N_single")
+        t_obs_pair = @elapsed pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
+        t_obs_zero = @elapsed zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
+        t_obs_total = @elapsed total_configs[step+1, :] = measure_op_config(mps, "N_tot")
+        link_dims[step+1, :] = linkdims(mps)
+        t_energy = @elapsed energy[step+1] = measure_mpo(mps, H)
+        t_kin = @elapsed kin_energy[step+1] = measure_mpo(mps, H_kin)
+        t_mass = @elapsed m_energy[step+1] = measure_mpo(mps, H_m)
+        t_el = @elapsed el_energy[step+1] = measure_mpo(mps, H_el)
 
-        for (n, T2) in enumerate(T2n)
-            T2_configs[step+1,n] = measure_mpo(mps, T2)
+        t_T2 = @elapsed for (n, T2) in enumerate(T2n)
+            T2_configs[step+1,n] = measure_mpo(mps, T2; alg="naive")
         end
 
-        # Monitor bond dimension
-        println("Step = $(step), Time = $(time() - start), Links = $(linkdims(mps))")
+        println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
+        println("  odd1=$(round(t_odd1,digits=3)) taylor1=$(round(t_taylor1,digits=3)) even=$(round(t_even,digits=3)) taylor2=$(round(t_taylor2,digits=3)) odd2=$(round(t_odd2,digits=3))")
+        println("  trace=$(round(t_trace,digits=3)) energy=$(round(t_energy,digits=3)) kin=$(round(t_kin,digits=3)) mass=$(round(t_mass,digits=3)) el=$(round(t_el,digits=3))")
+        println("  obs=$(round(t_obs_single+t_obs_pair+t_obs_zero+t_obs_total,digits=3)) T2=$(round(t_T2,digits=3))")
         flush(stdout)
     end
+    println("Time simulation done in: $(time() - time_start) seconds")
 
     # ------------------------------------- Save Simulation -------------------------------------
     # Write tracked observables to results h5 file

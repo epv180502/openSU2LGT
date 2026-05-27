@@ -34,8 +34,20 @@ const N = Float64[1 0;
 # =========================
 # SITE DEFINITION
 # =========================
+# function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
+#     return 4
+# end
+
 function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
-    return 4
+    if !conserve_qns
+        return 4
+    end
+    return [
+        QN(("Nr", 1), ("Ng", 1)) => 1,  # |rg⟩
+        QN(("Nr", 1), ("Ng", 0)) => 1,  # |r0⟩
+        QN(("Nr", 0), ("Ng", 1)) => 1,  # |0g⟩
+        QN(("Nr", 0), ("Ng", 0)) => 1,  # |00⟩
+    ]
 end
 
 function ITensors.state(::StateName"rg", ::SiteType"SU2_packed", s::Index)
@@ -62,7 +74,7 @@ end
 # HELPER
 # =========================
 
-make_op(mat, s) = ITensor(mat, prime(s), s)
+make_op(mat, s) = ITensor(mat, prime(s), dag(s))
 
 # =========================
 # IDENTITY
