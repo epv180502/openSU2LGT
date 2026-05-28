@@ -952,12 +952,13 @@ function measure_op_config(mps, opname; left = true)
 end
 
 function get_T2n(n; side="left")
-    # TODO: Instead of being for site n, make it return the list for all sites since I can reuse the previously
-    # calculated terms for the following sites
     """ 
     Get T squared lattice site n 
     This requires its own function as the integrated version does not 'keep track' of the gauge links, 
     instead we must reconstruct it from the charges of all previous sites. 
+
+    Function no longer used as it is much more efficient to calculate the correlators independently and 
+    manually reconstruct the expectation value of T2n via those numbers
     """
 
     # Construct the electric field MPO
@@ -993,6 +994,53 @@ function get_T2n(n; side="left")
 
     return opsum
 
+end
+
+function measure_closed_T2_configs(mps::MPS, N::Int)
+    """ Calculate the configuration of gauge fields by calculating the two-point correlators independently
+    first and from there reconstructing the final T2_n values
+    
+    Function works for closed system but not for open since correlation_matrix does not properly take into account 
+    our open system convention of the purifed MPS. 
+    """
+
+    T2 = zeros(ComplexF64, N)
+    
+    # Single-site terms
+    Q2_vals = expect(mps, "Q2"; sites=1:2:2N)  # only odd sites
+    
+    # Two-point correlators between all pairs of odd sites
+    odd_sites = collect(1:2:2N-1)
+    Cxx = correlation_matrix(mps, "Qx", "Qx"; sites=odd_sites)
+    Cyy = correlation_matrix(mps, "Qy", "Qy"; sites=odd_sites)
+    Czz = correlation_matrix(mps, "Qz", "Qz"; sites=odd_sites)
+    
+    # Reconstruct T2_n from partial sums
+    for n in 1:N
+        increment = 3 * Q2_vals[n] + 
+                    2 * sum(Cxx[1:n-1, n] + Cyy[1:n-1, n] + Czz[1:n-1, n])
+        T2[n] = (n > 1 ? T2[n-1] : 0.0) + increment
+    end
+    
+    return T2
+end
+
+# Then in the loop, just measure without reconstructing MPOs
+function measure_T2_configs(mps::MPS, N::Int, 
+                             Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
+    T2 = zeros(ComplexF64, N)
+    
+    for n in 1:N
+        increment = 3 * measure_mpo(mps, Q2_mpos[n]; alg="naive")
+        for q in 1:n-1
+            increment += 2 * (measure_mpo(mps, Cxx_mpos[q,n]; alg="naive") +
+                               measure_mpo(mps, Cyy_mpos[q,n]; alg="naive") +
+                               measure_mpo(mps, Czz_mpos[q,n]; alg="naive"))
+        end
+        T2[n] = (n > 1 ? T2[n-1] : 0.0) + increment
+    end
+    
+    return T2
 end
 
 function get_mpo_taylor_expansion(mpo, order, cutoff, sites)

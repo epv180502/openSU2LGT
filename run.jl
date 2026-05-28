@@ -118,6 +118,11 @@ function parseCommandline()
         help = "conserve quantum numbers"
         arg_type = Bool
         default = false
+
+        "--T2"
+        help = "how T2_n is calculated"
+        arg_type = Symbol
+        default = :None 
     end
     return parse_args(s)
 end
@@ -128,6 +133,8 @@ end
 Function performing the actual time evolution
 """
 function evolve()
+    start_tot = time()
+
     # ------------------------------------- Setup parameters of the simulation -------------------------------------
     # Parse the arguments from the command line
     parsedArgs = parseCommandline()
@@ -151,7 +158,8 @@ function evolve()
     cutoff = parsedArgs["cutoff"]                   # Cutoff of the SVD. Maximum normalization to be truncated in SVD
     maxdim = parsedArgs["maxdim"]                   # Maximum bond dimension
     folder = parsedArgs["folder"]                   # Folder to store results        
-    quantum_number_flag = parsedArgs["qns"]
+    quantum_number_flag = parsedArgs["qns"]         # Whether to conserve quantum numbers
+    compute_T2 = parsedArgs["T2"]                   # How to calculate the electric field
 
     number_of_time_steps = Int(round((final_time - 0) / tau))
 
@@ -165,7 +173,7 @@ function evolve()
     simulation_desc = string("SU2_timeSim")
     system_desc = string("_N", N, "a", a, "g", g2, "m", m, "D", D, "T", T, "env", env_corr_type)
     dyn_desc = string("_dt", tau, "nsteps", number_of_time_steps, "len", len)
-    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2, "QN", quantum_number_flag)
+    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2, "QN", quantum_number_flag, "el", compute_T2)
     path_to_results = string(folder, simulation_desc, system_desc, dyn_desc, TNparameters_desc, ".h5")
     println("Results will be saved in $path_to_results")
     flush(stdout)
@@ -175,9 +183,6 @@ function evolve()
     # Sites which need to be flipped
     ind_start = Int(round(N / 2 - len / 2)) + 1
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
-
-    # julia --project=. run.jl --N 4 --g2 1 --m 1 --T 10 --D 0 --tau 0.01 --maxdim 128 --len 0 --a 1 --cutoff 1E-11 --tec_1 1E-9 --tec_2 1E-9 --teo 1 --tF 0.05 
-    # Takes 139 seconds to run before implementing conserve_qns
 
     # Prepare the initial state
     # TODO: This does not prepare a string but a baryon-antibaryon pair
@@ -207,8 +212,30 @@ function evolve()
     H = MPO(H, sites)
     H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
     H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
-    T2n = [MPO(get_T2n(n), sites) for n in 1:N]
+    println("Finished getting the odd, even and taylor MPO's in $(time() - start) seconds")
+    flush(stdout)
 
+    start = time()
+
+    if compute_T2 === :Full
+        T2n = [MPO(get_T2n(n), sites) for n in 1:N]
+    elseif compute_T2 === :Separate
+        Q2_mpos = [MPO(OpSum() + (1, "Q2", 2p-1), sites) for p in 1:N]
+        Cxx_mpos = Matrix{MPO}(undef, N, N)
+        Cyy_mpos = Matrix{MPO}(undef, N, N)
+        Czz_mpos = Matrix{MPO}(undef, N, N)
+        for p in 1:N
+            for q in p+1:N
+                Cxx_mpos[p,q] = MPO(OpSum() + (1, "Qx", 2p-1, "Qx", 2q-1), sites)
+                Cyy_mpos[p,q] = MPO(OpSum() + (1, "Qy", 2p-1, "Qy", 2q-1), sites)
+                Czz_mpos[p,q] = MPO(OpSum() + (1, "Qz", 2p-1, "Qz", 2q-1), sites)
+            end
+        end
+    end
+
+    println("Finished creating the T2n MPO's in $(time() - start) seconds")
+    flush(stdout)
+    
     # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and 
     # combining this with the swapprime done on the operators later the transpose is taken on the operators acting 
     # on the even sites which correspond to operators acting on the right of the density matrix
@@ -216,17 +243,9 @@ function evolve()
         sites[i] = dag(sites[i])
     end
 
+    start = time()
     opsum_without_l0_terms = get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
     nn_odd_without_l0_terms, nn_even_without_l0_terms, taylor = get_odd_even_taylor_groups(opsum_without_l0_terms, sites)
-
-    # NOTE: Currently we are not using a background field but if we do we need to add it in the odd/even terms 
-
-    # # Get the odd and even opsum groups with just the l0 terms
-    # println("Now getting the odd, even and taylor gates with just the l0 terms")
-
-    # opsum_just_l0_terms = get_Lindblad_opsum_just_l0_terms(sites, x, l_0, lambda)
-    # nn_odd_just_l0_terms, nn_even_just_l0_terms, _ = get_odd_even_taylor_groups(opsum_just_l0_terms, sites)
-    # println("Finished getting the odd, even and taylor gates with just the l0 terms")
 
     # Gather the two odd and even gates
     odd = get_odd(sites, tau / 2, nn_odd_without_l0_terms)
@@ -271,9 +290,14 @@ function evolve()
     el_energy[1] = measure_mpo(mps, H_el; alg="naive")
 
     T2_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    for (n, T2) in enumerate(T2n)
-        T2_configs[1,n] = measure_mpo(mps, T2; alg="naive")
+    if compute_T2 === :Full
+        for (n, T2) in enumerate(T2n)
+            T2_configs[1,n] = measure_mpo(mps, T2; alg="naive")
+        end
+    elseif compute_T2 === :Separate
+        T2_configs[1, :] = measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
     end
+
     println("Finished getting the lists for the tracked observables in $(time() - start) seconds")
     flush(stdout)
 
@@ -281,43 +305,6 @@ function evolve()
     results_file = h5open(path_to_results, "w")
 
     # ------------------------------------- Run Simulation -------------------------------------
-    # Code with minimal time overview
-    # time_start = time()
-    # for step in 1:number_of_time_steps
-    #     start = time()
-
-    #     # One time step with ATDDMRG
-    #     apply_odd!(odd, mps, cutoff, maxdim)
-    #     mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
-    #     apply_even!(even, mps, cutoff, maxdim)
-    #     mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
-    #     apply_odd!(odd, mps, cutoff, maxdim)
-
-    #     # Fix trace
-    #     mps /= trace_mps(mps)
-
-    #     # Compute the tracked observables
-    #     single_configs[step+1, :] = measure_op_config(mps, "N_single")
-    #     pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
-    #     zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
-    #     total_configs[step+1, :] = measure_op_config(mps, "N_tot")
-    #     linkdims_of_step = linkdims(mps)
-    #     link_dims[step+1, :] = linkdims_of_step
-    #     energy[step+1] = measure_mpo(mps, H)
-    #     kin_energy[step+1] = measure_mpo(mps, H_kin)
-    #     m_energy[step+1] = measure_mpo(mps, H_m)
-    #     el_energy[step+1] = measure_mpo(mps, H_el)
-
-    #     for (n, T2) in enumerate(T2n)
-    #         T2_configs[step+1,n] = measure_mpo(mps, T2; alg="naive")
-    #     end
-
-    #     # Monitor bond dimension
-    #     println("Step = $(step), Time = $(time() - start), Links = $(linkdims(mps))")
-    #     flush(stdout)
-    # end
-    # println("Time simulation done in: $(time() - time_start) seconds")
-
     # Code with time overview for debugging/optimization
     time_start = time()
     for step in 1:number_of_time_steps
@@ -338,11 +325,22 @@ function evolve()
         link_dims[step+1, :] = linkdims(mps)
         t_energy = @elapsed energy[step+1] = measure_mpo(mps, H)
         t_kin = @elapsed kin_energy[step+1] = measure_mpo(mps, H_kin)
-        t_mass = @elapsed m_energy[step+1] = measure_mpo(mps, H_m)
+        t_mass = @elapsed m_energy[step+1] = (m == 0) ? 0.0 : measure_mpo(mps, H_m)
         t_el = @elapsed el_energy[step+1] = measure_mpo(mps, H_el)
 
-        t_T2 = @elapsed for (n, T2) in enumerate(T2n)
-            T2_configs[step+1,n] = measure_mpo(mps, T2; alg="naive")
+        if compute_T2 === :Full
+            t_T2 = @elapsed begin
+                for (n, T2) in enumerate(T2n)
+                    T2_configs[step+1, n] = measure_mpo(mps, T2; alg="naive")
+                end
+            end
+        elseif compute_T2 === :Separate
+            t_T2 = @elapsed begin
+                T2_configs[step+1, :] =
+                    measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
+            end
+        else
+            t_T2 = 0.0
         end
 
         println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
@@ -355,7 +353,6 @@ function evolve()
 
     # ------------------------------------- Save Simulation -------------------------------------
     # Write tracked observables to results h5 file
-    start = time()
     write(results_file, "single_configs", single_configs)
     write(results_file, "pair_configs", pair_configs)
     write(results_file, "zero_configs", zero_configs)
@@ -366,14 +363,15 @@ function evolve()
     write(results_file, "kin_energy", kin_energy)
     write(results_file, "m_energy", m_energy)
     write(results_file, "el_energy", el_energy)
+    total_runtime = time() - start_tot
+    write(results_file, "total_runtime", total_runtime)
+
+    println("Total simulation done in $total_runtime seconds")
     close(results_file)
-    println("Finished writing the observables to results h5 file in $(time() - start) seconds")
     flush(stdout)
 end
 
 # Run the function performing the evolution
-start_tot = time()
 evolve()
-println("Total simulation done in $(time() - start_tot) seconds")
 
 
