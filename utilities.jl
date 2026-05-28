@@ -1031,6 +1031,7 @@ function measure_T2_configs(mps::MPS, N::Int,
     T2 = zeros(ComplexF64, N)
     
     for n in 1:N
+        # TODO: We can instead use the get_op_config since Q2 is a one site operator
         increment = 3 * measure_mpo(mps, Q2_mpos[n]; alg="naive")
         for q in 1:n-1
             increment += 2 * (measure_mpo(mps, Cxx_mpos[q,n]; alg="naive") +
