@@ -185,12 +185,22 @@ function evolve()
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
 
     # Prepare the initial state
-    # TODO: This does not prepare a string but a baryon-antibaryon pair
+    # TODO: Generalize string state to be of any length len and in the middle of any system size
     "Local helper function to get the Dirac vacuum with a string of lenght 'len' on top"
     function get_initial_state()
         # Prepare the dirac vacuum with a string on top
-        sites_initial_state = siteinds("SU2_packed", N; conserve_qns=quantum_number_flag)   # TODO: Add conserve_qns
-        psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites) # This is a normal non-purified MPS
+        sites_initial_state = siteinds("SU2_packed", N; conserve_qns=quantum_number_flag)
+        
+        # This will be a normal non-purified MPS
+        if len == 0 
+            psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites)
+        elseif  len == 3 && N == 4
+            psi = get_string_on_dirac_vacuum_mps(sites_initial_state)
+            println("USING STRING STATE")
+        else
+            println("Currently only vacuum and string-3 for system size of N = 4 available as initial states")
+        end
+        println("Initial State Links = $(linkdims(psi))")
         rho = outer(psi', psi) # Get the density matrix
         rho_vec = convert(MPS, rho) # Convert the density matrix to a purified MPS
         mps = rho_vec_to_mps(rho_vec) # Split the sites so that each site has one physical index of dimension 4
@@ -217,8 +227,12 @@ function evolve()
 
     start = time()
 
+    # Create the MPO's that will be needed for calculating T2_n
     if compute_T2 === :Full
         T2n = [MPO(get_T2n(n), sites) for n in 1:N]
+        for T2 in T2n
+            println(linkdims(T2))
+        end
     elseif compute_T2 === :Separate
         Q2_mpos = [MPO(OpSum() + (1, "Q2", 2p-1), sites) for p in 1:N]
         Cxx_mpos = Matrix{MPO}(undef, N, N)
@@ -331,7 +345,7 @@ function evolve()
         if compute_T2 === :Full
             t_T2 = @elapsed begin
                 for (n, T2) in enumerate(T2n)
-                    T2_configs[step+1, n] = measure_mpo(mps, T2; alg="naive")
+                    T2_configs[step+1, n] = measure_mpo(mps, T2)
                 end
             end
         elseif compute_T2 === :Separate

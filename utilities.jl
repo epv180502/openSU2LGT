@@ -4,17 +4,18 @@ using LinearAlgebra
 # TODO: Add lamb_shift term
 
 # -------------------------------------------- SiteType Creation ---------------------------------------------
-""" We create a custom SiteType "SU2_packed" which is essentially a composite site made up of two spin-1/2 particles.
-    it would have also been possible to use a previously built one but for readeability we do this to identify each 
-    state as a combination of red and green. The order is such that the final site is |red> tensor |green> and all the
-    operators are similarly defined as the tensor product of whatever operator acts on each spin-1/2 system. 
-    
-    Convention used is Sz|0> = -|0>, Sz|a> = |a> and N|0> = 0, N|a> = |a>; where a can be red or green.
-    
-    I also call Id = S0 for convenience later on and to align with notes.
-    Some of the operators are superfluous/repeated but I write them out explicitaly for readability"""
+""" 
+We create a custom SiteType "SU2_packed" which is essentially a composite site made up of two spin-1/2 particles.
+it would have also been possible to use a previously built one but for readeability we do this to identify each 
+state as a combination of red and green. The order is such that the final site is |red> tensor |green> and all the
+operators are similarly defined as the tensor product of whatever operator acts on each spin-1/2 system. 
 
-# TODO: Should be possible to use conserve_qns to enforce the conservation of N_tot and delta_sigma_Z
+Convention used is Sz|0> = -|0>, Sz|a> = |a> and N|0> = 0, N|a> = |a>; where a can be red or green.
+
+I also call Id = S0 for convenience later on and to align with notes.
+Some of the operators are superfluous/repeated but I write them out explicitaly for readability.
+"""
+
 
 const Id = Float64[1 0; 
                    0 1]
@@ -34,9 +35,6 @@ const N = Float64[1 0;
 # =========================
 # SITE DEFINITION
 # =========================
-# function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
-#     return 4
-# end
 
 function ITensors.space(::SiteType"SU2_packed"; conserve_qns=false)
     if !conserve_qns
@@ -208,11 +206,11 @@ function ITensors.op(::OpName"Q2", ::SiteType"SU2_packed", s::Index)
 end
 
 # -------------------------------------------- System Functions ---------------------------------------------
-# NOTE: Hamiltonian Updated
 function get_aH_Hamiltonian(sites, g2, m, a)
 
     """
-    This gives the subsystem Hamiltonian acting on state vectors. Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
+    This gives the subsystem Hamiltonian acting on state vectors. 
+    Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian.
     
     Function used if we want to obtain eigenstates of the hamiltonian.
 
@@ -259,9 +257,8 @@ function get_aH_Hamiltonian(sites, g2, m, a)
 
 end
 
-# NOTE: Renamed some variables to add a dependence and erased gaussian environment
 function environment_correlator(type, n, m, D)
-    """ Give the environment correlator strength between given n, m sites where D is the self-correlation D_0"""
+    """ Give the environment correlator strength between given sites n and m where D is the self-correlation D_0"""
     if type == "constant"
         return D
     elseif type == "delta"
@@ -273,10 +270,11 @@ function environment_correlator(type, n, m, D)
     end
 end
 
-# NOTE: Updated to SU2 vacuum
 function get_dirac_vacuum_mps(sites; flip_sites = [])
-    """Function to create the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
-       If flip_sites is defined, put a string on top of that state by flipping the sites outlined in flip_sites""" 
+    """
+    Function to create the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
+    If flip_sites is defined, put a baryon-antibaryon pair on top of that state by flipping the sites outlined in flip_sites
+    """ 
 
     N = length(sites)
     state = []
@@ -305,11 +303,37 @@ function get_dirac_vacuum_mps(sites; flip_sites = [])
 
 end
 
-# NOTE: Hamiltonian Updated
+function get_string_on_dirac_vacuum_mps(sites)
+    """
+    Function to creates a string of length l in the middle of the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
+    """ 
+
+    psi_vacuum = get_dirac_vacuum_mps(sites)
+    
+    # Gab are hopping operators between a and b which when succesively applied move r-g from one site to another
+    G12 = op("S0Sp", sites[1]) * op("SzSm", sites[2]) +
+          op("SpSz", sites[1]) * op("SmS0", sites[2])
+     
+    G23 = op("S0Sp", sites[2]) * op("SzSm", sites[3]) +
+          op("SpSz", sites[2]) * op("SmS0", sites[3])
+    
+    G34 = op("S0Sp", sites[3]) * op("SzSm", sites[4]) +
+          op("SpSz", sites[3]) * op("SmS0", sites[4])
+    
+    # Apply in the physically correct order similar to odd and even gates
+    gates = ITensor[G34, G12, G23]
+    psi_string = apply(gates, psi_vacuum)
+
+    # Out of precaution though shouldn't be necessary normalize
+    normalize!(psi_string)
+    
+    return psi_string
+end
+
 function get_double_aH_Hamiltonian(sites, g2, m, a, side)
 
     """
-    This gives H Hamiltonian acting on one side of a vectorized density matrices on a given side. 
+    This gives H Hamiltonian acting on one side of a vectorized density matrices on a given side.
     Side specifies "left" or "right" to imply H tensor product I or vice versa so that is H*rho or rho*H.
     Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
 
@@ -376,7 +400,6 @@ function get_double_aH_Hamiltonian(sites, g2, m, a, side)
 
 end
 
-# NOTE: Liouvillian Update
 function get_aLm_aLndag(n, m, a, T, sites)
 
     """
@@ -396,10 +419,11 @@ function get_aLm_aLndag(n, m, a, T, sites)
     J = -1/(2*a)                # Prefactor of kinetic term
     prefactor = J/(4*T)         # Prefactor of Sn/Sm terms 
 
-    # Physical n,m refer to the lattice sites while n, m refer to the MPO indices
+    # n_phys, m_phys refer to the lattice sites while n, m refer to the MPO indices
     n_phys, m_phys = div(n, 2), div(m + 1, 2)
     phys_sign = n_phys + m_phys
 
+    # See derivation for explanation
     Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
                (-1, "SpSz", n-2, "SmS0", n), (-1, "S0Sp", n-2, "SzSm", n)]
 
@@ -480,7 +504,6 @@ function get_aLm_aLndag(n, m, a, T, sites)
     
 end
 
-# Note: Liouvillian Update
 function get_aLndag_aLm(n, m, a, T, sites, side)
 
     """
@@ -501,7 +524,7 @@ function get_aLndag_aLm(n, m, a, T, sites, side)
     J = -1/(2*a)                # Prefactor of kinetic term
     prefactor = J/(4*T)         # Prefactor of Sn/Sm terms 
 
-    # Physical n,m refer to the lattice sites while n, m refer to the MPO indices
+    # n_phys, m_phys refer to the lattice sites while n, m refer to the MPO indices
     if side == "left"
         n_phys, m_phys = div(n + 1, 2), div(m + 1, 2)
     else
@@ -509,6 +532,7 @@ function get_aLndag_aLm(n, m, a, T, sites, side)
     end
     phys_sign = n_phys + m_phys
 
+    # See derivation for explanation
     Sn_minus = [(1, "SmSz", n-2, "SpS0", n), (1, "S0Sm", n-2, "SzSp", n),  
                (-1, "SpSz", n-2, "SmS0", n), (-1, "S0Sp", n-2, "SzSm", n)]
 
@@ -589,7 +613,6 @@ function get_aLndag_aLm(n, m, a, T, sites, side)
 
 end
 
-# NOTE: Liouvillian Updated
 function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_type, dissipator_sites)
 
     """
@@ -627,7 +650,6 @@ function get_Lindblad_opsum_without_l0_terms(sites, g2, m, a, T, D, env_corr_typ
 
 end
 
-# NOTE: Hamiltonian Updated. 
 function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
 
     """
@@ -636,6 +658,9 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
     Currently (1+1)D gauge-fields integrated SU2 LGT hamiltonian
 
     Function used to create the full lindbladian
+
+    At present moment equivalent to 'get_double_aH_Hamiltonian' but if we add l_0 term in the future
+    it is neceesary to have two separate functions
 
     g2 = Gauge coupling square g**2
     m = Mass
@@ -696,8 +721,7 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
 
     return opsum
 end
-
-# NOTE: Hamiltonian Updated. 
+ 
 function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
 
     """
@@ -770,15 +794,16 @@ function get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
 end
 
 # -------------------------------------------- Tensor Network Functions ---------------------------------------------
-# NOTE: Updated site name from S=1/2 to SU2_packed
 function rho_vec_to_mps(rho_vec)
 
-    """ Transform a purified MPS representing a vectorized density matrix into a proper MPS by splitting each 
-        site (which currently has two legts) into two separate sites with each a dimension of 4 """
+    """ 
+    Transform a purified MPS representing a vectorized density matrix into a proper MPS by splitting each 
+    site (which currently has two legs) into two separate sites with each a dimension of 4 
+    """
 
     N = length(rho_vec)
 
-    mps = MPS(2*N)
+    mps = MPS(2*N)  # Our final purified MPS will have twice as many indices as lattice sites
 
     for i in 1:N
 
@@ -888,7 +913,11 @@ end
 
 function trace_mps(mps)
 
-    """ Take the trace of the MPS. At this is a density matrix, not a sate vector, this is the correct way to normalize after truncation"""
+    """ 
+    Take the trace of the MPS. Since this is a density matrix, not a state vector, this is the correct way to normalize after truncation.
+    That means our state is not normalized as |<psi|psi>|^2 = 1, but rather trace(rho), so tracing between adjacent legs that signify the 
+    bra and ket of site n
+    """
 
     sites = siteinds(mps)
     l = length(mps)
@@ -906,7 +935,6 @@ function trace_mps(mps)
 
 end
 
-# NOTE: Updated operator to measure to be arbitrary operator you input
 function measure_op(mps, opname, site)
 
     """ Measure any local operator on a given site of the mps """
@@ -930,10 +958,9 @@ function measure_op(mps, opname, site)
 
 end
 
-# NOTE: Updated operator to measure to be arbitrary operator you input
 function measure_op_config(mps, opname; left = true)
 
-    """ Measure any operator on all the sites of the mps """
+    """ Measure any local operator on all the sites of the mps """
 
     n = length(mps)
     op_config = []
@@ -1025,7 +1052,6 @@ function measure_closed_T2_configs(mps::MPS, N::Int)
     return T2
 end
 
-# Then in the loop, just measure without reconstructing MPOs
 function measure_T2_configs(mps::MPS, N::Int, 
                              Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
     T2 = zeros(ComplexF64, N)
@@ -1307,11 +1333,6 @@ function measure_mpo(mps, mpo; alg = "none")
 
 end
 
-# QUESTIONS:
-# 1. Why are the bond dimensions of the taylor MPO asymmetrical? And big for the open case? Taylor MPO is huge
-# 2. Conserve_qns?
-# 3. Why did you not have x-dependence in the LnLm stuff?
-# 4. How did you keep track of the electric field?
-# 5. What decides which algorithm you use when measuring MPO's?
-# 6. How do I write the string state?
-# 7. How long do simulations take?
+# TODO:
+# Create efficient T2n measurement
+# Test cutoffs, test tec_1, test tec_2, test MPO_measuring_algorithm
