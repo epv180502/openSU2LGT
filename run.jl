@@ -345,7 +345,7 @@ function evolve()
         if compute_T2 === :Full
             t_T2 = @elapsed begin
                 for (n, T2) in enumerate(T2n)
-                    T2_configs[step+1, n] = measure_mpo(mps, T2)
+                    T2_configs[step+1, n] = measure_mpo(mps, T2; alg="naive")
                 end
             end
         elseif compute_T2 === :Separate
