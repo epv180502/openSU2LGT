@@ -303,11 +303,12 @@ function get_dirac_vacuum_mps(sites; flip_sites = [])
 
 end
 
-function get_string_on_dirac_vacuum_mps(sites)
+function get_string_on_dirac_vacuum_mps(sites, len)
     """
     Function to creates a string of length l in the middle of the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
     """ 
 
+    N = length(sites)
     psi_vacuum = get_dirac_vacuum_mps(sites)
     
     # Gab are hopping operators between a and b which when succesively applied move r-g from one site to another
@@ -1023,41 +1024,11 @@ function get_T2n(n; side="left")
 
 end
 
-function measure_closed_T2_configs(mps::MPS, N::Int)
-    """ Calculate the configuration of gauge fields by calculating the two-point correlators independently
-    first and from there reconstructing the final T2_n values
-    
-    Function works for closed system but not for open since correlation_matrix does not properly take into account 
-    our open system convention of the purifed MPS. 
-    """
-
-    T2 = zeros(ComplexF64, N)
-    
-    # Single-site terms
-    Q2_vals = expect(mps, "Q2"; sites=1:2:2N)  # only odd sites
-    
-    # Two-point correlators between all pairs of odd sites
-    odd_sites = collect(1:2:2N-1)
-    Cxx = correlation_matrix(mps, "Qx", "Qx"; sites=odd_sites)
-    Cyy = correlation_matrix(mps, "Qy", "Qy"; sites=odd_sites)
-    Czz = correlation_matrix(mps, "Qz", "Qz"; sites=odd_sites)
-    
-    # Reconstruct T2_n from partial sums
-    for n in 1:N
-        increment = 3 * Q2_vals[n] + 
-                    2 * sum(Cxx[1:n-1, n] + Cyy[1:n-1, n] + Czz[1:n-1, n])
-        T2[n] = (n > 1 ? T2[n-1] : 0.0) + increment
-    end
-    
-    return T2
-end
-
-function measure_T2_configs(mps::MPS, N::Int, 
+function measure_T2_configs(mps, N, 
                              Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
     T2 = zeros(ComplexF64, N)
     
     for n in 1:N
-        # TODO: We can instead use the get_op_config since Q2 is a one site operator
         increment = 3 * measure_mpo(mps, Q2_mpos[n]; alg="naive")
         for q in 1:n-1
             increment += 2 * (measure_mpo(mps, Cxx_mpos[q,n]; alg="naive") +
@@ -1333,6 +1304,139 @@ function measure_mpo(mps, mpo; alg = "none")
 
 end
 
+function contract_site_id(L, mps, sites, n)
+
+    """Add identity to the right of environment L and contract"""
+
+    ket = mps[2n-1]
+    bra = mps[2n]
+    s = sites[2n-1]
+    sb = sites[2n]
+
+    L = L * ket
+    L = L * bra
+    L = L * dag(delta(s, sb))
+    return L
+end
+
+function contract_site_op(L, mps, sites, n, opname)
+
+    """Add operator 'opname' to the right of environment L and contract"""
+
+    ket = mps[2n-1]
+    bra = mps[2n]
+    s = sites[2n-1]
+    sb = sites[2n]
+
+    O = op(opname, s)          
+    ket_Oped = noprime(O * ket)        
+
+    L = L * ket_Oped
+    L = L * bra
+    L = L * dag(delta(s, sb))
+
+    return L
+
+end
+
+function close_right(L, R)::ComplexF64
+
+    """Contract environment left with right to get the expectation value"""
+
+    return scalar(L * R)
+end
+
+function measure_T2_sweep(mps)::Vector{ComplexF64}
+
+    """
+    Function to calculate the T2_configs of a purified mps produced by rho_vec_to_mps(). 
+    Returns a length N vector T2[n] with the expectation values of T2 at N
+
+    Works by doing a single sweep left to right applying Q2 at site n to an environment of only identities to the left L_id
+    and applying Qa at site n to another environment L_Qa which has the operator Qa applied to all p < n left sites
+    summed, that is, L_Qa = Σ_{p=1}^{n-1} (Qa_p). Using these two environments combined with prebuilt right environments
+    R_id which have the contraction of all sites p > n, we can calculate the expectation value of Q2_n in a left to right 
+    sweep and all the correlators <Qa_p Qa_n> for all p < n while we are acting on site n. After calculating the expectation
+    values we update L_id by adding identity on site n and we update L_Qa by adding the operator with all identities to the
+    left of n and operator Qa on site n. 
+    """
+
+    sites_all = siteinds(mps)
+    N_phys    = div(length(mps), 2)
+
+    # Precompute right identity environments 
+    # R_id[n] = Identity contraction of sites n, n+1, …, N_phys
+    R_id = Vector{ITensor}(undef, N_phys + 1)
+    R_id[N_phys + 1] = ITensor(1.0)
+
+    for n in N_phys:-1:1
+        R_id[n] = contract_site_id(R_id[n+1], mps, sites_all, n)
+    end
+
+    # Initialize results (T2) and left environments of pure identities L_id, and of Qa at all sites p < n L_Qa
+    T2 = zeros(ComplexF64, N_phys)
+    T2_running = 0.0 + 0.0im
+    L_id = ITensor(1.0)
+    L_Qx = ITensor(0.0)
+    L_Qy = ITensor(0.0)
+    L_Qz = ITensor(0.0)
+
+    for n in 1:N_phys
+
+        # Expectation values of Q2_n
+        L_mid_Q2 = contract_site_op(L_id, mps, sites_all, n, "Q2") # L_id[n]-Q2
+        q2_n = close_right(L_mid_Q2, R_id[n+1])                    # L_id[n]-Q2-R_id[n]
+
+        # Expectation values of correlators
+        if n > 1
+            # Add Qa on site n to the left L_Qa environments to create all QaQa combinations
+            L_cx = contract_site_op(L_Qx, mps, sites_all, n, "Qx")
+            L_cy = contract_site_op(L_Qy, mps, sites_all, n, "Qy")
+            L_cz = contract_site_op(L_Qz, mps, sites_all, n, "Qz")
+
+            # L_Qa[n]-Qa = Σ_{p=1}^{n-1} <Qa_p Qa_n>
+            corr_x = close_right(L_cx, R_id[n+1])
+            corr_y = close_right(L_cy, R_id[n+1])
+            corr_z = close_right(L_cz, R_id[n+1])
+        else
+            corr_x = 0.0 + 0.0im
+            corr_y = 0.0 + 0.0im
+            corr_z = 0.0 + 0.0im
+        end
+
+        # Calculate <T2_n> since T2_n[n] = T2_n[n-1] + (terms involving site n)
+        T2_running += 3 * q2_n + 2 * (corr_x + corr_y + corr_z)
+        T2[n] = T2_running
+
+        # Update left environments for the NEXT iteration
+
+        # Create "seeds" by adding Qa at the end of L_id, so creating the new terms of L_Qa
+        new_seed_x = contract_site_op(L_id, mps, sites_all, n, "Qx")
+        new_seed_y = contract_site_op(L_id, mps, sites_all, n, "Qy")
+        new_seed_z = contract_site_op(L_id, mps, sites_all, n, "Qz")
+
+        if n > 1
+            # Extend old environments through site n with identity
+            L_Qx_ext = contract_site_id(L_Qx, mps, sites_all, n)
+            L_Qy_ext = contract_site_id(L_Qy, mps, sites_all, n)
+            L_Qz_ext = contract_site_id(L_Qz, mps, sites_all, n)
+
+            # Add new terms with identities before n and Qa_n
+            L_Qx = L_Qx_ext + new_seed_x
+            L_Qy = L_Qy_ext + new_seed_y
+            L_Qz = L_Qz_ext + new_seed_z
+        else
+            L_Qx = new_seed_x
+            L_Qy = new_seed_y
+            L_Qz = new_seed_z
+        end
+
+        # Extend the identity environment all the way to n
+        L_id = contract_site_id(L_id, mps, sites_all, n)
+    end
+
+    return T2
+end
+
 # TODO:
-# Create efficient T2n measurement
 # Test cutoffs, test tec_1, test tec_2, test MPO_measuring_algorithm

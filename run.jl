@@ -122,7 +122,12 @@ function parseCommandline()
         "--T2"
         help = "how T2_n is calculated"
         arg_type = Symbol
-        default = :None 
+        default = :Efficient 
+
+        "--mEnergy"
+        help = "measure energy"
+        arg_type = Bool
+        default = false
     end
     return parse_args(s)
 end
@@ -160,6 +165,7 @@ function evolve()
     folder = parsedArgs["folder"]                   # Folder to store results        
     quantum_number_flag = parsedArgs["qns"]         # Whether to conserve quantum numbers
     compute_T2 = parsedArgs["T2"]                   # How to calculate the electric field
+    measure_energy_flag = parsedArgs["mEnergy"]     # Whether to measure energy
 
     number_of_time_steps = Int(round((final_time - 0) / tau))
 
@@ -194,8 +200,8 @@ function evolve()
         # This will be a normal non-purified MPS
         if len == 0 
             psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites)
-        elseif  len == 3 && N == 4
-            psi = get_string_on_dirac_vacuum_mps(sites_initial_state)
+        elseif len == 3 && N == 4
+            psi = get_string_on_dirac_vacuum_mps(sites_initial_state, len)
             println("USING STRING STATE")
         else
             println("Currently only vacuum and string-3 for system size of N = 4 available as initial states")
@@ -230,9 +236,6 @@ function evolve()
     # Create the MPO's that will be needed for calculating T2_n
     if compute_T2 === :Full
         T2n = [MPO(get_T2n(n), sites) for n in 1:N]
-        for T2 in T2n
-            println(linkdims(T2))
-        end
     elseif compute_T2 === :Separate
         Q2_mpos = [MPO(OpSum() + (1, "Q2", 2p-1), sites) for p in 1:N]
         Cxx_mpos = Matrix{MPO}(undef, N, N)
@@ -245,6 +248,8 @@ function evolve()
                 Czz_mpos[p,q] = MPO(OpSum() + (1, "Qz", 2p-1, "Qz", 2q-1), sites)
             end
         end
+    # elseif compute_T2 === :Efficient
+    #    Do nothing
     end
 
     println("Finished creating the T2n MPO's in $(time() - start) seconds")
@@ -310,6 +315,8 @@ function evolve()
         end
     elseif compute_T2 === :Separate
         T2_configs[1, :] = measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
+    elseif compute_T2 === :Efficient
+        T2_configs[1, :] = measure_T2_sweep(mps)
     end
 
     println("Finished getting the lists for the tracked observables in $(time() - start) seconds")
@@ -324,24 +331,34 @@ function evolve()
     for step in 1:number_of_time_steps
         start = time()
 
+        # Time evolution
         t_odd1 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
         t_taylor1 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
         t_even = @elapsed apply_even!(even, mps, cutoff, maxdim)
         t_taylor2 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
         t_odd2 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
 
+        # Normalizing the purified MPS
         t_trace = @elapsed mps /= trace_mps(mps)
 
+        # Measure local observables
         t_obs_single = @elapsed single_configs[step+1, :] = measure_op_config(mps, "N_single")
         t_obs_pair = @elapsed pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
         t_obs_zero = @elapsed zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
         t_obs_total = @elapsed total_configs[step+1, :] = measure_op_config(mps, "N_tot")
         link_dims[step+1, :] = linkdims(mps)
-        t_energy = @elapsed energy[step+1] = measure_mpo(mps, H)
-        t_kin = @elapsed kin_energy[step+1] = measure_mpo(mps, H_kin)
-        t_mass = @elapsed m_energy[step+1] = (m == 0) ? 0.0 : measure_mpo(mps, H_m)
-        t_el = @elapsed el_energy[step+1] = measure_mpo(mps, H_el)
 
+        # Measure energy expectation values
+        if measure_energy_flag
+            t_energy = @elapsed energy[step+1] = measure_mpo(mps, H)
+            t_kin = @elapsed kin_energy[step+1] = measure_mpo(mps, H_kin)
+            t_mass = @elapsed m_energy[step+1] = (m == 0) ? 0.0 : measure_mpo(mps, H_m)
+            t_el = @elapsed el_energy[step+1] = measure_mpo(mps, H_el)
+        else
+            t_energy = t_kin = t_mass = t_el = 0.0
+        end
+
+        # Measure gauge fields which must be reconstructed from the charges
         if compute_T2 === :Full
             t_T2 = @elapsed begin
                 for (n, T2) in enumerate(T2n)
@@ -353,6 +370,8 @@ function evolve()
                 T2_configs[step+1, :] =
                     measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
             end
+        elseif compute_T2 === :Efficient
+            t_T2 = @elapsed T2_configs[step+1, :] = measure_T2_sweep(mps)
         else
             t_T2 = 0.0
         end
