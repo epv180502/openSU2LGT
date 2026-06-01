@@ -191,7 +191,6 @@ function evolve()
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
 
     # Prepare the initial state
-    # TODO: Generalize string state to be of any length len and in the middle of any system size
     "Local helper function to get the Dirac vacuum with a string of lenght 'len' on top"
     function get_initial_state()
         # Prepare the dirac vacuum with a string on top
@@ -200,11 +199,9 @@ function evolve()
         # This will be a normal non-purified MPS
         if len == 0 
             psi = get_dirac_vacuum_mps(sites_initial_state; flip_sites)
-        elseif len == 3 && N == 4
+        else
             psi = get_string_on_dirac_vacuum_mps(sites_initial_state, len)
             println("USING STRING STATE")
-        else
-            println("Currently only vacuum and string-3 for system size of N = 4 available as initial states")
         end
         println("Initial State Links = $(linkdims(psi))")
         rho = outer(psi', psi) # Get the density matrix

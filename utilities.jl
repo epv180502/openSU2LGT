@@ -304,25 +304,47 @@ function get_dirac_vacuum_mps(sites; flip_sites = [])
 end
 
 function get_string_on_dirac_vacuum_mps(sites, len)
+    # TODO: Benchmark the three possible strings with N = 6 ED system
+
     """
     Function to creates a string of length l in the middle of the dirac vacuum of a (1+1)D gauge-fields integrated SU2 LGT.
+    
+    len = Length of the string. Must be an odd number smaller than the number of sites
     """ 
 
     N = length(sites)
     psi_vacuum = get_dirac_vacuum_mps(sites)
-    
-    # Gab are hopping operators between a and b which when succesively applied move r-g from one site to another
-    G12 = op("S0Sp", sites[1]) * op("SzSm", sites[2]) +
-          op("SpSz", sites[1]) * op("SmS0", sites[2])
-     
-    G23 = op("S0Sp", sites[2]) * op("SzSm", sites[3]) +
-          op("SpSz", sites[2]) * op("SmS0", sites[3])
-    
-    G34 = op("S0Sp", sites[3]) * op("SzSm", sites[4]) +
-          op("SpSz", sites[3]) * op("SmS0", sites[4])
-    
-    # Apply in the physically correct order similar to odd and even gates
-    gates = ITensor[G34, G12, G23]
+
+    # Figure out between which indices the string will be placed
+    string_start = div(N,2) - div(len,2)
+    string_end = string_start + len
+    gates = ITensor[]
+
+    # The hopping operators must be anti-site -> site
+    if isodd(string_start) # This is a site since julia starts counting on 1
+        # Hops leftward
+        for n in string_end:-2:string_start
+            push!(gates, op("S0Sp", sites[n-1]) * op("SzSm", sites[n]) +
+                op("SpSz", sites[n-1]) * op("SmS0", sites[n]))
+        end
+
+        for n in (string_end-1):-2:(string_start+1)
+            push!(gates, op("S0Sp", sites[n-1]) * op("SzSm", sites[n]) +
+                op("SpSz", sites[n-1]) * op("SmS0", sites[n]))
+        end
+    else
+        # Hops rightward
+        for n in string_start:2:string_end
+            push!(gates, op("S0Sm", sites[n]) * op("SzSp", sites[n+1]) +
+                op("SmSz", sites[n]) * op("SpS0", sites[n+1]))
+        end
+
+        for n in (string_start+1):2:(string_end-1)
+            push!(gates, op("S0Sm", sites[n]) * op("SzSp", sites[n+1]) +
+                op("SmSz", sites[n]) * op("SpS0", sites[n+1]))
+        end
+    end
+
     psi_string = apply(gates, psi_vacuum)
 
     # Out of precaution though shouldn't be necessary normalize
