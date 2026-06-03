@@ -960,7 +960,7 @@ end
 
 function measure_op(mps, opname, site)
 
-    """ Measure any local operator on a given site of the mps """
+    """ Measure any local operator on a given site of the mps (DEPRECATED)"""
 
     sites = siteinds(mps)
     l = length(mps)
@@ -983,7 +983,7 @@ end
 
 function measure_op_config(mps, opname; left = true)
 
-    """ Measure any local operator on all the sites of the mps """
+    """ Measure any local operator on all the sites of the mps (DEPRECATED)"""
 
     n = length(mps)
     op_config = []
@@ -1302,7 +1302,10 @@ end
 
 function measure_mpo(mps, mpo; alg = "none")
 
-    """ Measure the expectation value of an MPO on an mps """
+    """ 
+    Measure the expectation value of an MPO on an mps. 
+    Inneficient but very easy and straight forward to use
+    """
 
     sites = siteinds(mps)
     l = length(mps)
@@ -1323,6 +1326,57 @@ function measure_mpo(mps, mpo; alg = "none")
     end
 
     return res[1]
+
+end
+
+"""
+The following functions employ an algorithm inspired by how ITensors does correlation_matrix, but takes into consideration 
+the use of purified MPS which differ in two very big ways. First of all the norm of a purified MPS is not 1 but rather the 
+trace is 1. More importantly, an expectation value is not <MPS|O|MPS>, but rather tr(rho*O). In this code we are doubling 
+the amount of sites our MPS has by unraveling the MPO. This means the "left" side of rho lives on odd legs and the "right" 
+side lives on even legs (odd/even wrt julia index notation). So the trace of our MPS is basically tracing adjacent sites 
+with eachother. Taking an expectation value is tracing adjacent sites after applying an MPO on only one side (even/odd parity)
+of the purified MPS. With this in mind, taking an expectation value can simply be applying the MPO can tracing. This is 
+however not optimal, specially when wanting to calculate site resolved expectation values. 
+
+Considering the present model is highly non-local because we integrated out gauge fields, the following codes calculate the 
+expectation values by doing a single rightward sweep and saving up the traced out left environments. 
+
+Namely, the spirit of the algorithm is the following:
+1. Precompute right environments. This means compute the trace of the purified MPS from site n+1 to N_phys. 
+2. Compute the initial environments. Namely, L_id (same as R_id but for 1,2,...,n) and any non-local environments
+you need. For example if you need <Q_n Q_m> correlators build left L_Qa environmen where it represents the traced out
+version of all sites to the left of n, having applied one Qa operator at site p. L_Qa is the superpositions of all p < n. 
+This means L_Qa = Σ_{p=1}^{n-1} Qa_p. 
+
+    for n = 1:N_phys
+            3. For local operators: add Qa operator at site n onto the left identity environment L_id
+            4. For non-local operators: add Qa operator at site n onto the left L_Qa environment. 
+            5. Contract the resulting (L_id or L_Qa) * Qa with the precomputed right environments R_id
+            6. Update the next L_Qa by adding all the left environments obtained by adding Qa at site n onto L_id
+            7. Update the L_id to go up to site n+1 
+"""
+
+function build_R_id(mps)
+
+    """
+    Computes all right identity environments for purified MPS. Namely:
+    R_id[n] is the identity contraction of physical sites n, n+1, …, N_phys
+    R_id[N_phys+1] = scalar 1 (empty right boundary)
+
+    This right environment is not <MPS|MPS>, but rather trace(MPS)
+    """
+
+    sites_all = siteinds(mps)
+    N_phys = div(length(mps), 2)
+
+    R_id = Vector{ITensor}(undef, N_phys + 1)
+    R_id[N_phys + 1] = ITensor(1.0)
+    for n in N_phys:-1:1
+        R_id[n] = contract_site_id(R_id[n+1], mps, sites_all, n)
+    end
+
+    return R_id
 
 end
 
@@ -1368,7 +1422,7 @@ function close_right(L, R)::ComplexF64
     return scalar(L * R)
 end
 
-function measure_T2_sweep(mps)::Vector{ComplexF64}
+function measure_T2_sweep(mps, R_id)::Vector{ComplexF64}
 
     """
     Function to calculate the T2_configs of a purified mps produced by rho_vec_to_mps(). 
@@ -1385,15 +1439,6 @@ function measure_T2_sweep(mps)::Vector{ComplexF64}
 
     sites_all = siteinds(mps)
     N_phys    = div(length(mps), 2)
-
-    # Precompute right identity environments 
-    # R_id[n] = Identity contraction of sites n, n+1, …, N_phys
-    R_id = Vector{ITensor}(undef, N_phys + 1)
-    R_id[N_phys + 1] = ITensor(1.0)
-
-    for n in N_phys:-1:1
-        R_id[n] = contract_site_id(R_id[n+1], mps, sites_all, n)
-    end
 
     # Initialize results (T2) and left environments of pure identities L_id, and of Qa at all sites p < n L_Qa
     T2 = zeros(ComplexF64, N_phys)
@@ -1459,6 +1504,136 @@ function measure_T2_sweep(mps)::Vector{ComplexF64}
 
     return T2
 end
+
+function measure_local_op_sweep(mps, opname, R_id)::Vector{ComplexF64}
+
+    """
+    Measure the expectation value of single-site operator opname at everypoint of the lattice in the purified MPS
+    with the right environment being already given to the function.
+        
+    Algorithm follows the same idea as the T2_sweep function
+    """
+    
+    sites_all = siteinds(mps)
+    N_phys = div(length(mps), 2)
+
+    # Initialize variables
+    op_results = zeros(ComplexF64, N_phys)
+    L_id = ITensor(1.0)
+
+    # Single rightward sweep
+    for n in 1:N_phys
+        # Put on opname at the end of left identity environment
+        L_with_op = contract_site_op(L_id, mps, sites_all, n, opname)
+
+        # Calculate expectation value
+        op_results[n] = close_right(L_with_op, R_id[n+1])
+
+        # Update left environment for next loop
+        L_id = contract_site_id(L_id, mps, sites_all, n)
+    end
+
+    return op_results
+
+end
+
+function measure_H_sweep(mps, g2, m, a, R_id)
+
+    """
+    Measure the expectation value of the energy separated by kinetic, mass and electric contributions
+    Algorithm follows the same idea as the T2_sweep function
+    """
+
+    sites_all = siteinds(mps)
+    N_phys    = div(length(mps), 2)
+
+    E_kin  = 0.0 + 0.0im
+    E_el   = 0.0 + 0.0im
+    E_mass = 0.0 + 0.0im
+
+    # Initialize left environments
+    L_id     = ITensor(1.0)
+    L_DeltaZ = ITensor(0.0)
+    L_SmSp   = ITensor(0.0)
+    L_SpSm   = ITensor(0.0)
+
+    # Singular rightward sweep
+    for n in 1:N_phys
+
+        # Mass energy: We use N-1 because julia starts enumeration with 1
+        if m != 0.0
+            L_Ntot = contract_site_op(L_id, mps, sites_all, n, "N_tot")
+            E_mass += m * (-1)^(n-1) * close_right(L_Ntot, R_id[n+1])
+        end
+
+        # Electric energy: Diagonal term (if statement because of n-N prefactor)
+        if n < N_phys
+            L_1mSzSz = contract_site_op(L_id, mps, sites_all, n, "1-SzSz")
+            E_el += (a*g2/2) * (3.0/8.0) * (N_phys-n) * close_right(L_1mSzSz, R_id[n+1])
+        end
+
+        # Kintetic energy: Two-body terms (if statement because of n-N prefactor)
+        if n < N_phys
+            coef_kin = -1.0/(2.0*a)
+            for (op_left, op_right) in (("SpSz", "SmS0"), ("S0Sp", "SzSm"),
+                                        ("SmSz", "SpS0"), ("S0Sm", "SzSp"))
+
+                # We extend the nth L_id twice with op_left and op_right, then close with R_id[n+2]
+                L_tmp = contract_site_op(L_id, mps, sites_all, n, op_left)
+                L_tmp2 = contract_site_op(L_tmp, mps, sites_all, n+1, op_right)
+                E_kin += coef_kin * close_right(L_tmp2, R_id[n+2])
+            end
+        end
+
+        # Electric energy: Off-diagonal term which has all to all terms 
+        if n > 1 && n < N_phys   # n=1 has no left partners, n=N_phys has coef 0
+            coef_n = Float64(N_phys - n)  
+
+            if coef_n > 0.0
+                # DeltaZ * DeltaZ pairs
+                coef_DZ = (a*g2/2) * (1.0/8.0) * coef_n
+                L_cDZ = contract_site_op(L_DeltaZ, mps, sites_all, n, "DeltaZ")
+                E_el += coef_DZ * close_right(L_cDZ, R_id[n+1])
+
+                # SmSp * SpSm pairs
+                coef_hop = (a*g2/2) * coef_n
+                L_cSmSp = contract_site_op(L_SmSp, mps, sites_all, n, "SpSm")
+                E_el += coef_hop * close_right(L_cSmSp, R_id[n+1])
+
+                # SpSm * SmSp pairs
+                L_cSpSm = contract_site_op(L_SpSm, mps, sites_all, n, "SmSp")
+                E_el += coef_hop * close_right(L_cSpSm, R_id[n+1])
+            end
+        end
+
+        # Update left environments for next loop
+
+        # Seeds: L_id extended through n with the operator inserted at n
+        seed_DeltaZ = contract_site_op(L_id, mps, sites_all, n, "DeltaZ")
+        seed_SmSp = contract_site_op(L_id, mps, sites_all, n, "SmSp")
+        seed_SpSm = contract_site_op(L_id, mps, sites_all, n, "SpSm")
+
+        if n > 1
+            # Extend existing environment through site n with identity
+            L_DeltaZ = contract_site_id(L_DeltaZ, mps, sites_all, n) + seed_DeltaZ
+            L_SmSp = contract_site_id(L_SmSp, mps, sites_all, n) + seed_SmSp
+            L_SpSm = contract_site_id(L_SpSm, mps, sites_all, n) + seed_SpSm
+        else
+            L_DeltaZ = seed_DeltaZ
+            L_SmSp = seed_SmSp
+            L_SpSm = seed_SpSm
+        end
+
+        # Extend identity boundary
+        L_id = contract_site_id(L_id, mps, sites_all, n)
+    end
+
+    # Simply add all energies for total
+    E_tot = E_kin + E_el + E_mass
+
+    return E_kin, E_el, E_mass, E_tot
+end
+
 
 # TODO:
 # Test cutoffs, test tec_1, test tec_2, test MPO_measuring_algorithm

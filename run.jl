@@ -143,6 +143,11 @@ end
 Function performing the actual time evolution
 """
 function evolve()
+    # See parallelization information
+    println("Julia threads:  ", Threads.nthreads())
+    println("BLAS threads:   ", BLAS.get_num_threads())
+    println("BLAS config:    ", BLAS.get_config())
+    flush(stdout)
     start_tot = time()
 
     # ------------------------------------- Setup parameters of the simulation -------------------------------------
@@ -184,7 +189,7 @@ function evolve()
     simulation_desc = string("SU2_timeSim")
     system_desc = string("_N", N, "a", a, "g", g2, "m", m, "D", D, "T", T, "env", env_corr_type)
     dyn_desc = string("_dt", tau, "nsteps", number_of_time_steps, "len", len)
-    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2, "QN", quantum_number_flag, "T2", compute_T2)
+    TNparameters_desc = string("_chi", maxdim, "SVD", cutoff, "teo", taylor_expansion_order, "tec", taylor_expansion_cutoff_1, "y", taylor_expansion_cutoff_2, "QN", quantum_number_flag, "T2", compute_T2, "mEn", measure_energy_flag)
     path_to_results = string(folder, simulation_desc, system_desc, dyn_desc, TNparameters_desc, ".h5")
     println("Results will be saved in $path_to_results")
     flush(stdout)
@@ -223,15 +228,15 @@ function evolve()
     flush(stdout)
     # ------------------------------------- Create the hamiltonian -------------------------------------
     # Get the taylor, odd and even opsum groups without the l0 terms
-    start = time()
+    # start = time()
     
-    side = "left"
-    H = get_double_aH_Hamiltonian(sites, g2, m, a, side)
-    H = MPO(H, sites)
-    H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
-    H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
-    println("Finished getting the odd, even and taylor MPO's in $(time() - start) seconds")
-    flush(stdout)
+    # side = "left"
+    # H = get_double_aH_Hamiltonian(sites, g2, m, a, side)
+    # H = MPO(H, sites)
+    # H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
+    # H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
+    # println("Finished getting the odd, even and taylor MPO's in $(time() - start) seconds")
+    # flush(stdout)
 
     start = time()
 
@@ -291,25 +296,29 @@ function evolve()
     # ------------------------------------- Get the observables to be measured -------------------------------------
     # Starting the lists of the observables we want to keep track of
     start = time()
+    R_id = build_R_id(mps)
+
+    # Matter observables
     single_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    single_configs[1, :] = measure_op_config(mps, "N_single")
+    single_configs[1, :] = measure_local_op_sweep(mps, "N_single", R_id)
     pair_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    pair_configs[1, :] = measure_op_config(mps, "N_pair")
+    pair_configs[1, :] = measure_local_op_sweep(mps, "N_pair", R_id)
     zero_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    zero_configs[1, :] = measure_op_config(mps, "N_zero")
+    zero_configs[1, :] = measure_local_op_sweep(mps, "N_zero", R_id)
     total_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    total_configs[1, :] = measure_op_config(mps, "N_tot")
+    total_configs[1, :] = measure_local_op_sweep(mps, "N_tot", R_id)
     link_dims = zeros(Int64, number_of_time_steps + 1, 2 * N - 1)
     link_dims[1, :] = linkdims(mps)
-    energy = zeros(ComplexF64, number_of_time_steps + 1)
-    energy[1] = measure_mpo(mps, H)
-    kin_energy = zeros(ComplexF64, number_of_time_steps + 1)
-    kin_energy[1] = measure_mpo(mps, H_kin; alg="naive")
-    m_energy = zeros(ComplexF64, number_of_time_steps + 1)
-    m_energy[1] = measure_mpo(mps, H_m; alg="naive")
-    el_energy = zeros(ComplexF64, number_of_time_steps + 1)
-    el_energy[1] = measure_mpo(mps, H_el; alg="naive")
 
+    # Energies
+    energy = zeros(ComplexF64, number_of_time_steps + 1)
+    kin_energy = zeros(ComplexF64, number_of_time_steps + 1)
+    m_energy = zeros(ComplexF64, number_of_time_steps + 1)
+    el_energy = zeros(ComplexF64, number_of_time_steps + 1)
+    kin_energy[1], el_energy[1], m_energy[1], energy[1] = measure_H_sweep(mps, g2, m, a, R_id)
+
+    # Gauge fields
+    # TODO: There really isn't any reason to allow for the other T2 measurements. Should delete
     T2_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
     if compute_T2 === :Full
         for (n, T2) in enumerate(T2n)
@@ -318,7 +327,7 @@ function evolve()
     elseif compute_T2 === :Separate
         T2_configs[1, :] = measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
     elseif compute_T2 === :Efficient
-        T2_configs[1, :] = measure_T2_sweep(mps)
+        T2_configs[1, :] = measure_T2_sweep(mps, R_id)
     end
 
     println("Finished getting the lists for the tracked observables in $(time() - start) seconds")
@@ -344,20 +353,23 @@ function evolve()
         t_trace = @elapsed mps /= trace_mps(mps)
 
         # Measure local observables
-        t_obs_single = @elapsed single_configs[step+1, :] = measure_op_config(mps, "N_single")
-        t_obs_pair = @elapsed pair_configs[step+1, :] = measure_op_config(mps, "N_pair")
-        t_obs_zero = @elapsed zero_configs[step+1, :] = measure_op_config(mps, "N_zero")
-        t_obs_total = @elapsed total_configs[step+1, :] = measure_op_config(mps, "N_tot")
+        R_id = build_R_id(mps)
+        t_obs_single = @elapsed single_configs[step+1, :] = measure_local_op_sweep(mps, "N_single", R_id)
+        t_obs_pair = @elapsed pair_configs[step+1, :] = measure_local_op_sweep(mps, "N_pair", R_id)
+        t_obs_zero = @elapsed zero_configs[step+1, :] = measure_local_op_sweep(mps, "N_zero", R_id)
+        t_obs_total = @elapsed total_configs[step+1, :] = measure_local_op_sweep(mps, "N_tot", R_id)
         link_dims[step+1, :] = linkdims(mps)
 
         # Measure energy expectation values
         if measure_energy_flag
-            t_energy = @elapsed energy[step+1] = measure_mpo(mps, H)
-            t_kin = @elapsed kin_energy[step+1] = measure_mpo(mps, H_kin)
-            t_mass = @elapsed m_energy[step+1] = (m == 0) ? 0.0 : measure_mpo(mps, H_m)
-            t_el = @elapsed el_energy[step+1] = measure_mpo(mps, H_el)
+            t_energy = @elapsed begin
+                kin_energy[step+1], 
+                el_energy[step+1], 
+                m_energy[step+1], 
+                energy[step+1] = measure_H_sweep(mps, g2, m, a, R_id)
+            end
         else
-            t_energy = t_kin = t_mass = t_el = 0.0
+            t_energy = 0
         end
 
         # Measure gauge fields which must be reconstructed from the charges
@@ -373,15 +385,15 @@ function evolve()
                     measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
             end
         elseif compute_T2 === :Efficient
-            t_T2 = @elapsed T2_configs[step+1, :] = measure_T2_sweep(mps)
+            t_T2 = @elapsed T2_configs[step+1, :] = measure_T2_sweep(mps, R_id)
         else
             t_T2 = 0.0
         end
 
         println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
         println("  odd1=$(round(t_odd1,digits=3)) taylor1=$(round(t_taylor1,digits=3)) even=$(round(t_even,digits=3)) taylor2=$(round(t_taylor2,digits=3)) odd2=$(round(t_odd2,digits=3))")
-        println("  trace=$(round(t_trace,digits=3)) energy=$(round(t_energy,digits=3)) kin=$(round(t_kin,digits=3)) mass=$(round(t_mass,digits=3)) el=$(round(t_el,digits=3))")
-        println("  obs=$(round(t_obs_single+t_obs_pair+t_obs_zero+t_obs_total,digits=3)) T2=$(round(t_T2,digits=3))")
+        println("  single=$(round(t_obs_single,digits=3)), pair=$(round(t_obs_pair,digits=3)), zero=$(round(t_obs_zero,digits=3)), total=$(round(t_obs_total,digits=3))")
+        println("  trace=$(round(t_trace,digits=3)) energy=$(round(t_energy,digits=3)), T2=$(round(t_T2,digits=3))")
         flush(stdout)
     end
     println("Time simulation done in: $(time() - time_start) seconds")
