@@ -10,7 +10,6 @@ using HDF5
 using SparseArrays
 using Arpack
 using TupleTools
-#using OpenQuantumTools
 using Statistics
 using ArgParse
 include("utilities.jl")
@@ -73,11 +72,6 @@ function parseCommandline()
         help = "penalty strength"
         arg_type = Float64
         default = 0.0
-
-        # "--nsteps"
-        # help = "number of steps"
-        # arg_type = Int
-        # default = 100
 
         "--tF"
         help = "final time"
@@ -143,6 +137,7 @@ end
 Function performing the actual time evolution
 """
 function evolve()
+
     # See parallelization information
     println("Julia threads:  ", Threads.nthreads())
     println("BLAS threads:   ", BLAS.get_num_threads())
@@ -162,7 +157,6 @@ function evolve()
     D = parsedArgs["D"]                             # Self-correlation
     env_corr_type = parsedArgs["env_corr_type"]     # Type of correlator
     l_0 = parsedArgs["l_0"]                         # Background electric field
-    # number_of_time_steps = parsedArgs["nsteps"]     # Number of timesteps (does not include the 0th time)
     final_time = parsedArgs["tF"]                   # Final time to be reached
     len = parsedArgs["len"]                         # Length of the string 
     tau = parsedArgs["tau"]                         # Timestep
@@ -196,6 +190,7 @@ function evolve()
 
     # ------------------------------------- Create the initial state -------------------------------------
     start = time()
+
     # Sites which need to be flipped
     ind_start = Int(round(N / 2 - len / 2)) + 1
     flip_sites = collect(ind_start:ind_start+len-1) # If len = 0, this will not flip any sites and effectively return the vacuum 
@@ -227,41 +222,6 @@ function evolve()
     println("Finished getting the initial state in $(time() - start) seconds")
     flush(stdout)
     # ------------------------------------- Create the hamiltonian -------------------------------------
-    # Get the taylor, odd and even opsum groups without the l0 terms
-    # start = time()
-    
-    # side = "left"
-    # H = get_double_aH_Hamiltonian(sites, g2, m, a, side)
-    # H = MPO(H, sites)
-    # H_kin, H_el, H_m = get_double_aH_Hamiltonian_individual_terms(N, g2, m, a, side)
-    # H_kin, H_el, H_m = MPO(H_kin, sites), MPO(H_el, sites), MPO(H_m, sites)
-    # println("Finished getting the odd, even and taylor MPO's in $(time() - start) seconds")
-    # flush(stdout)
-
-    start = time()
-
-    # Create the MPO's that will be needed for calculating T2_n
-    if compute_T2 === :Full
-        T2n = [MPO(get_T2n(n), sites) for n in 1:N]
-    elseif compute_T2 === :Separate
-        Q2_mpos = [MPO(OpSum() + (1, "Q2", 2p-1), sites) for p in 1:N]
-        Cxx_mpos = Matrix{MPO}(undef, N, N)
-        Cyy_mpos = Matrix{MPO}(undef, N, N)
-        Czz_mpos = Matrix{MPO}(undef, N, N)
-        for p in 1:N
-            for q in p+1:N
-                Cxx_mpos[p,q] = MPO(OpSum() + (1, "Qx", 2p-1, "Qx", 2q-1), sites)
-                Cyy_mpos[p,q] = MPO(OpSum() + (1, "Qy", 2p-1, "Qy", 2q-1), sites)
-                Czz_mpos[p,q] = MPO(OpSum() + (1, "Qz", 2p-1, "Qz", 2q-1), sites)
-            end
-        end
-    # elseif compute_T2 === :Efficient
-    #    Do nothing
-    end
-
-    println("Finished creating the T2n MPO's in $(time() - start) seconds")
-    flush(stdout)
-    
     # This is done so that the odd, even gates and taylor MPO have physical legs matching the purified MPS and 
     # combining this with the swapprime done on the operators later the transpose is taken on the operators acting 
     # on the even sites which correspond to operators acting on the right of the density matrix
@@ -318,15 +278,8 @@ function evolve()
     kin_energy[1], el_energy[1], m_energy[1], energy[1] = measure_H_sweep(mps, g2, m, a, R_id)
 
     # Gauge fields
-    # TODO: There really isn't any reason to allow for the other T2 measurements. Should delete
     T2_configs = zeros(ComplexF64, number_of_time_steps + 1, N) 
-    if compute_T2 === :Full
-        for (n, T2) in enumerate(T2n)
-            T2_configs[1,n] = measure_mpo(mps, T2; alg="naive")
-        end
-    elseif compute_T2 === :Separate
-        T2_configs[1, :] = measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
-    elseif compute_T2 === :Efficient
+    if compute_T2 === :Efficient
         T2_configs[1, :] = measure_T2_sweep(mps, R_id)
     end
 
@@ -373,18 +326,7 @@ function evolve()
         end
 
         # Measure gauge fields which must be reconstructed from the charges
-        if compute_T2 === :Full
-            t_T2 = @elapsed begin
-                for (n, T2) in enumerate(T2n)
-                    T2_configs[step+1, n] = measure_mpo(mps, T2; alg="naive")
-                end
-            end
-        elseif compute_T2 === :Separate
-            t_T2 = @elapsed begin
-                T2_configs[step+1, :] =
-                    measure_T2_configs(mps, N, Q2_mpos, Cxx_mpos, Cyy_mpos, Czz_mpos)
-            end
-        elseif compute_T2 === :Efficient
+        if compute_T2 === :Efficient
             t_T2 = @elapsed T2_configs[step+1, :] = measure_T2_sweep(mps, R_id)
         else
             t_T2 = 0.0
