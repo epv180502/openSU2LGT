@@ -1,3 +1,8 @@
+if haskey(ENV, "USE_MKL")
+    using MKL
+    println("Using MKL")
+    flush(stdout)
+end
 using ITensors
 using ITensorMPS
 using LinearAlgebra
@@ -117,7 +122,7 @@ function parseCommandline()
         "--qns"
         help = "conserve quantum numbers"
         arg_type = Bool
-        default = false
+        default = true
 
         "--T2"
         help = "how T2_n is calculated"

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "48afbc07fac352574e97a5f3eba61439a2ae2fa2"
+project_hash = "28a9e952455a00d5132ea9f46f42866beaef1738"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -2171,6 +2171,12 @@ deps = ["CodecZlib", "Dates", "HDF5", "OrderedCollections", "PooledArrays", "Spa
 git-tree-sha1 = "6f8434aa453c31d5a12c376d297449afa5112404"
 uuid = "23992714-dd62-5051-b70f-ba57cb901cac"
 version = "0.11.5"
+
+[[deps.MKL]]
+deps = ["Artifacts", "Libdl", "LinearAlgebra", "Logging", "MKL_jll"]
+git-tree-sha1 = "7babad0b8cb353d15ed85090342d3c63af5f6819"
+uuid = "33e6dc65-8f57-5167-99aa-e5a354878fb2"
+version = "0.9.1"
 
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
