@@ -745,7 +745,7 @@ function get_double_aH_Hamiltonian_without_l0_terms(sites, g2, m, a, side)
     return opsum
 end
  
-# -------------------------------------------- Tensor Network Functions ---------------------------------------------
+# -------------------------------------------- TN Time Evolution Functions ---------------------------------------------
 function rho_vec_to_mps(rho_vec)
 
     """ 
@@ -886,7 +886,6 @@ function trace_mps(mps)
     return res[1]
 
 end
-
 
 function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
 
@@ -1124,6 +1123,8 @@ function get_odd_even_taylor_groups(opsum, sites)
     return nn_odd, nn_even, taylor
 
 end
+
+# -------------------------------------------- TN Measurement Functions ---------------------------------------------
 
 function measure_mpo(mps, mpo; alg = "none")
 
@@ -1459,6 +1460,57 @@ function measure_H_sweep(mps, g2, m, a, R_id)
     return E_kin, E_el, E_mass, E_tot
 end
 
+# -------------------------------------------- File I/O Functions ---------------------------------------------
+
+function create_extendable_dataset(file, name, init_data::AbstractMatrix, T, total_steps)
+
+    """Function to initialize an extendable dataset from a matrix. Applicable for O_configs and link_dims"""
+
+    dims  = (total_steps, size(init_data, 2))
+    chunk = (1, size(init_data, 2))
+    ds = create_dataset(file, name, datatype(T), dataspace(dims); chunk=chunk)
+    ds[1:1, :] = init_data[1:1, :]  # For now just save the first line
+
+    return ds
+
+end
+
+function create_extendable_dataset(file, name, init_data::AbstractVector, T, total_steps)
+
+    """Function to initialize an extendable dataset from a vector. Applicable for energy expectation values"""
+
+    ds = create_dataset(file, name, datatype(T), dataspace((total_steps,)); chunk=(1,))
+    ds[1:1] = init_data[1:1]  # For now just save the first value
+
+    return ds
+
+end
+
+function flush_to_hdf5!(upto_step, last_flushed_step, results_file,
+                         ds_single, ds_pair, ds_zero, ds_total, ds_T2, ds_link,
+                         ds_energy, ds_kin, ds_m, ds_el,
+                         single_configs, pair_configs, zero_configs, total_configs,
+                         T2_configs, link_dims, energy, kin_energy, m_energy, el_energy)
+
+    """Function to write out the new steps from local julia to the HDF5 file and flush the results to disk"""
+
+    rows = last_flushed_step[] + 1 : upto_step + 1  # +1 because julia indexing starts at 1
+
+    # ds_O is the port to the hdf5 dataset while O_configs/energy is the local julia variable
+    ds_single[rows, :] = single_configs[rows, :]
+    ds_pair[rows, :] = pair_configs[rows, :]
+    ds_zero[rows, :] = zero_configs[rows, :]
+    ds_total[rows, :] = total_configs[rows, :]
+    ds_T2[rows, :] = T2_configs[rows, :]
+    ds_link[rows, :] = link_dims[rows, :]
+    ds_energy[rows] = energy[rows]
+    ds_kin[rows] = kin_energy[rows]
+    ds_m[rows] = m_energy[rows]
+    ds_el[rows] = el_energy[rows]
+
+    flush(results_file)
+    last_flushed_step[] = upto_step
+end
 
 # TODO:
-# Test cutoffs, test tec_1, test tec_2, test MPO_measuring_algorithm
+# Test cutoffs, test tec_1, test tec_2

@@ -127,6 +127,11 @@ function parseCommandline()
         help = "measure energy"
         arg_type = Bool
         default = false
+
+        "--cps"
+        help = "do checkpoint after cps steps"
+        arg_type = Int
+        default = 100
     end
     return parse_args(s)
 end
@@ -170,6 +175,7 @@ function evolve()
     quantum_number_flag = parsedArgs["qns"]         # Whether to conserve quantum numbers
     compute_T2 = parsedArgs["T2"]                   # How to calculate the electric field
     measure_energy_flag = parsedArgs["mEnergy"]     # Whether to measure energy
+    checkpoint_steps = parsedArgs["cps"]            # Steps after which to do a checkpoint and save results
 
     number_of_time_steps = Int(round((final_time - 0) / tau))
 
@@ -253,8 +259,7 @@ function evolve()
     println("Finished getting taylor MPO in $(time() - start) seconds")
     flush(stdout)
 
-    # ------------------------------------- Get the observables to be measured -------------------------------------
-    # Starting the lists of the observables we want to keep track of
+    # ------------------------------------- Get the observables to be measured locally -------------------------------------
     start = time()
     R_id = build_R_id(mps)
 
@@ -286,11 +291,26 @@ function evolve()
     println("Finished getting the lists for the tracked observables in $(time() - start) seconds")
     flush(stdout)
 
-    # Open the HDF5 file for the results
+    # ------------------------------------- Open HDF5 and create extendable datasets -------------------------------------
     results_file = h5open(path_to_results, "w")
+    total_steps = number_of_time_steps + 1
+
+    # ds_O are now extensions to the HDF5 files
+    ds_single = create_extendable_dataset(results_file, "single_configs", single_configs, ComplexF64, total_steps)
+    ds_pair = create_extendable_dataset(results_file, "pair_configs", pair_configs, ComplexF64, total_steps)
+    ds_zero = create_extendable_dataset(results_file, "zero_configs", zero_configs, ComplexF64, total_steps)
+    ds_total = create_extendable_dataset(results_file, "total_configs", total_configs, ComplexF64, total_steps)
+    ds_T2 = create_extendable_dataset(results_file, "T2_configs", T2_configs, ComplexF64, total_steps)
+    ds_link = create_extendable_dataset(results_file, "link_dims", link_dims, Int64, total_steps)
+    ds_energy = create_extendable_dataset(results_file, "energy", energy, ComplexF64, total_steps)
+    ds_kin = create_extendable_dataset(results_file, "kin_energy", kin_energy, ComplexF64, total_steps)
+    ds_m = create_extendable_dataset(results_file, "m_energy", m_energy, ComplexF64, total_steps)
+    ds_el = create_extendable_dataset(results_file, "el_energy", el_energy, ComplexF64, total_steps)
+
+    # Track which in-memory rows are not yet flushed
+    last_flushed_step = Ref(0)  # step 0 (initial state) already written above
 
     # ------------------------------------- Run Simulation -------------------------------------
-    # Code with time overview for debugging/optimization
     time_start = time()
     for step in 1:number_of_time_steps
         start = time()
@@ -325,11 +345,23 @@ function evolve()
             t_energy = 0
         end
 
-        # Measure gauge fields which must be reconstructed from the charges
+        # Measure gauge fields
         if compute_T2 === :Efficient
             t_T2 = @elapsed T2_configs[step+1, :] = measure_T2_sweep(mps, R_id)
         else
             t_T2 = 0.0
+        end
+
+        # ------------------------------------- Periodic checkpoint -------------------------------------
+        if step % checkpoint_steps == 0 || step == number_of_time_steps
+            t_save = @elapsed flush_to_hdf5!(step, last_flushed_step, results_file,
+                         ds_single, ds_pair, ds_zero, ds_total, ds_T2, ds_link,
+                         ds_energy, ds_kin, ds_m, ds_el,
+                         single_configs, pair_configs, zero_configs, total_configs,
+                         T2_configs, link_dims, energy, kin_energy, m_energy, el_energy)
+            println("-----------------------------------------------------------------------------")
+            println("  >>> Checkpoint: flushed steps $(last_flushed_step[]-checkpoint_steps+1)-$(last_flushed_step[]) to disk in $(round(t_save, digits=3))s")
+            println("-----------------------------------------------------------------------------")
         end
 
         println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
@@ -340,21 +372,9 @@ function evolve()
     end
     println("Time simulation done in: $(time() - time_start) seconds")
 
-    # ------------------------------------- Save Simulation -------------------------------------
-    # Write tracked observables to results h5 file
-    write(results_file, "single_configs", single_configs)
-    write(results_file, "pair_configs", pair_configs)
-    write(results_file, "zero_configs", zero_configs)
-    write(results_file, "total_configs", total_configs)
-    write(results_file, "T2_configs", T2_configs)
-    write(results_file, "link_dims", link_dims)
-    write(results_file, "energy", energy)
-    write(results_file, "kin_energy", kin_energy)
-    write(results_file, "m_energy", m_energy)
-    write(results_file, "el_energy", el_energy)
+    # ------------------------------------- Save metadata and close -------------------------------------
     total_runtime = time() - start_tot
     write(results_file, "total_runtime", total_runtime)
-
     println("Total simulation done in $total_runtime seconds")
     close(results_file)
     flush(stdout)
