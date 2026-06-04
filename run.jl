@@ -194,6 +194,13 @@ function evolve()
     println("Results will be saved in $path_to_results")
     flush(stdout)
 
+    # Check if the results file already exists
+    if isfile(path_to_results)
+        println("Simulation already exists. Shutting down")
+        flush(stdout)
+        return
+    end
+
     # ------------------------------------- Create the initial state -------------------------------------
     start = time()
 
@@ -308,7 +315,7 @@ function evolve()
     ds_el = create_extendable_dataset(results_file, "el_energy", el_energy, ComplexF64, total_steps)
 
     # Track which in-memory rows are not yet flushed
-    last_flushed_step = Ref(0)  # step 0 (initial state) already written above
+    last_flushed_step = 0
 
     # ------------------------------------- Run Simulation -------------------------------------
     time_start = time()
@@ -317,9 +324,9 @@ function evolve()
 
         # Time evolution
         t_odd1 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
-        t_taylor1 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+        t_taylor1 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim, alg="zipup")
         t_even = @elapsed apply_even!(even, mps, cutoff, maxdim)
-        t_taylor2 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim)
+        t_taylor2 = @elapsed mps = apply(taylor_mpo, mps; cutoff=cutoff, maxdim=maxdim, alg="zipup")
         t_odd2 = @elapsed apply_odd!(odd, mps, cutoff, maxdim)
 
         # Normalizing the purified MPS
@@ -352,22 +359,23 @@ function evolve()
             t_T2 = 0.0
         end
 
+        println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
+        println("  odd1=$(round(t_odd1,digits=3)) taylor1=$(round(t_taylor1,digits=3)) even=$(round(t_even,digits=3)) taylor2=$(round(t_taylor2,digits=3)) odd2=$(round(t_odd2,digits=3))")
+        println("  single=$(round(t_obs_single,digits=3)), pair=$(round(t_obs_pair,digits=3)), zero=$(round(t_obs_zero,digits=3)), total=$(round(t_obs_total,digits=3))")
+        println("  trace=$(round(t_trace,digits=3)) energy=$(round(t_energy,digits=3)), T2=$(round(t_T2,digits=3))")
+        
         # ------------------------------------- Periodic checkpoint -------------------------------------
         if step % checkpoint_steps == 0 || step == number_of_time_steps
-            t_save = @elapsed flush_to_hdf5!(step, last_flushed_step, results_file,
+            t_save = @elapsed last_flushed_step = flush_to_hdf5(step, last_flushed_step, results_file,
                          ds_single, ds_pair, ds_zero, ds_total, ds_T2, ds_link,
                          ds_energy, ds_kin, ds_m, ds_el,
                          single_configs, pair_configs, zero_configs, total_configs,
                          T2_configs, link_dims, energy, kin_energy, m_energy, el_energy)
             println("-----------------------------------------------------------------------------")
-            println("  >>> Checkpoint: flushed steps $(last_flushed_step[]-checkpoint_steps+1)-$(last_flushed_step[]) to disk in $(round(t_save, digits=3))s")
+            println("  >>> Checkpoint: flushed steps $(last_flushed_step-checkpoint_steps+1)-$(last_flushed_step) to disk in $(round(t_save, digits=3))s")
             println("-----------------------------------------------------------------------------")
         end
-
-        println("Step = $(step), Total = $(round(time() - start, digits=3))s, Links = $(linkdims(mps))")
-        println("  odd1=$(round(t_odd1,digits=3)) taylor1=$(round(t_taylor1,digits=3)) even=$(round(t_even,digits=3)) taylor2=$(round(t_taylor2,digits=3)) odd2=$(round(t_odd2,digits=3))")
-        println("  single=$(round(t_obs_single,digits=3)), pair=$(round(t_obs_pair,digits=3)), zero=$(round(t_obs_zero,digits=3)), total=$(round(t_obs_total,digits=3))")
-        println("  trace=$(round(t_trace,digits=3)) energy=$(round(t_energy,digits=3)), T2=$(round(t_T2,digits=3))")
+        
         flush(stdout)
     end
     println("Time simulation done in: $(time() - time_start) seconds")

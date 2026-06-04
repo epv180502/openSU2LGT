@@ -2,7 +2,7 @@ using ITensors
 using LinearAlgebra
 
 # TODO: Add lamb_shift term
-
+# TODO: Separate code into different files for ease of use and possible implementation onto other projects
 # -------------------------------------------- SiteType Creation ---------------------------------------------
 """ 
 We create a custom SiteType "SU2_packed" which is essentially a composite site made up of two spin-1/2 particles.
@@ -895,7 +895,7 @@ function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
 
     l = [mpo]
     for i in 2:order
-        push!(l, apply(l[end], mpo/i; cutoff = cutoff))
+        push!(l, apply(l[end], mpo/i; cutoff = cutoff, alg="zipup"))
     end
 
     tmp1 = sum(l)
@@ -905,7 +905,7 @@ function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
         tmp2[i] = swapprime(tmp2[i], 0, 1; :tags => "Site")
     end
 
-    return add(tmp1, tmp2; cutoff = 0)
+    return add(tmp1, tmp2; cutoff = cutoff)
 
 end
 
@@ -1486,7 +1486,7 @@ function create_extendable_dataset(file, name, init_data::AbstractVector, T, tot
 
 end
 
-function flush_to_hdf5!(upto_step, last_flushed_step, results_file,
+function flush_to_hdf5(upto_step, last_flushed_step, results_file,
                          ds_single, ds_pair, ds_zero, ds_total, ds_T2, ds_link,
                          ds_energy, ds_kin, ds_m, ds_el,
                          single_configs, pair_configs, zero_configs, total_configs,
@@ -1494,7 +1494,7 @@ function flush_to_hdf5!(upto_step, last_flushed_step, results_file,
 
     """Function to write out the new steps from local julia to the HDF5 file and flush the results to disk"""
 
-    rows = last_flushed_step[] + 1 : upto_step + 1  # +1 because julia indexing starts at 1
+    rows = last_flushed_step + 1 : upto_step + 1  # +1 because julia indexing starts at 1
 
     # ds_O is the port to the hdf5 dataset while O_configs/energy is the local julia variable
     ds_single[rows, :] = single_configs[rows, :]
@@ -1509,8 +1509,7 @@ function flush_to_hdf5!(upto_step, last_flushed_step, results_file,
     ds_el[rows] = el_energy[rows]
 
     flush(results_file)
-    last_flushed_step[] = upto_step
-end
+    last_flushed_step = upto_step
 
-# TODO:
-# Test cutoffs, test tec_1, test tec_2
+    return last_flushed_step
+end
