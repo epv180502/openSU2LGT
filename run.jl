@@ -103,6 +103,11 @@ function parseCommandline()
         arg_type = Float64
         default = 1E-5
 
+        "--tec_3"
+        help = "cutoff 3 for Taylor expansion"
+        arg_type = Float64
+        default = 1E-5
+
         "--cutoff"
         help = "cutoff for evolution"
         arg_type = Float64
@@ -167,8 +172,9 @@ function evolve()
     tau = parsedArgs["tau"]                         # Timestep
     dissipator_sites = collect(1:N)                 # Site to be acted upon by the env. Defaulted to all
     taylor_expansion_order = parsedArgs["teo"]      # Order of Taylor expansion
-    taylor_expansion_cutoff_1 = parsedArgs["tec_1"] # Cutoff 1 for Taylor expansion
-    taylor_expansion_cutoff_2 = parsedArgs["tec_2"] # Cutoff 2 for Taylor expansion
+    taylor_expansion_cutoff_1 = parsedArgs["tec_1"] # Cutoff 1 for Taylor expansion [Controls creation of L MPO]
+    taylor_expansion_cutoff_2 = parsedArgs["tec_2"] # Cutoff 2 for Taylor expansion [Controls creation of L^n MPO]
+    taylor_expansion_cutoff_3 = parsedArgs["tec_3"] # Cutoff 3 for Taylor expansion [Controls addition of L^n MPO and Id MPO]
     cutoff = parsedArgs["cutoff"]                   # Cutoff of the SVD. Maximum normalization to be truncated in SVD
     maxdim = parsedArgs["maxdim"]                   # Maximum bond dimension
     folder = parsedArgs["folder"]                   # Folder to store results        
@@ -261,8 +267,8 @@ function evolve()
         taylor_mpo_tmp[i] = swapprime(taylor_mpo_tmp[i], 0, 1; :tags => "Site")
     end
 
-    taylor_mpo = get_mpo_taylor_expansion(taylor_mpo_tmp, taylor_expansion_order, taylor_expansion_cutoff_2, sites)
-    println("The taylor_mpo with taylor order $(taylor_expansion_order) and cutoffs $(taylor_expansion_cutoff_1), $(taylor_expansion_cutoff_2) has bond dimensions ", linkdims(taylor_mpo))
+    taylor_mpo = get_mpo_taylor_expansion(taylor_mpo_tmp, taylor_expansion_order, taylor_expansion_cutoff_2, taylor_expansion_cutoff_3, sites)
+    println("The taylor_mpo with taylor order $(taylor_expansion_order) and cutoffs $(taylor_expansion_cutoff_1), $(taylor_expansion_cutoff_2), $(taylor_expansion_cutoff_3), has bond dimensions ", linkdims(taylor_mpo))
     println("Finished getting taylor MPO in $(time() - start) seconds")
     flush(stdout)
 

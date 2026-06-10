@@ -887,7 +887,7 @@ function trace_mps(mps)
 
 end
 
-function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
+function get_mpo_taylor_expansion(mpo, order, expansion_cutoff, addition_cuttof, sites)
 
     """
     Returns the taylor expansion to the given input order of the mpo as 1 + mpo + mpo * mpo / factorial(2) + mpo * mpo * mpo / factorial(3) + ... etc
@@ -895,7 +895,7 @@ function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
 
     l = [mpo]
     for i in 2:order
-        push!(l, apply(l[end], mpo/i; cutoff = cutoff, alg="zipup"))
+        push!(l, apply(l[end], mpo/i; cutoff = expansion_cutoff, alg="zipup"))
     end
 
     tmp1 = sum(l)
@@ -905,7 +905,7 @@ function get_mpo_taylor_expansion(mpo, order, cutoff, sites)
         tmp2[i] = swapprime(tmp2[i], 0, 1; :tags => "Site")
     end
 
-    return add(tmp1, tmp2; cutoff = cutoff)
+    return add(tmp1, tmp2; cutoff = addition_cuttof)
 
 end
 
